@@ -38,6 +38,9 @@ dependencies:
   intl: ^0.20.2
   lucide_icons: ^0.257.0
   table_calendar: ^3.2.0
+  sqflite: ^2.3.0
+  path: ^1.8.3
+  uuid: ^4.3.3
 
 dev_dependencies:
   flutter_test:

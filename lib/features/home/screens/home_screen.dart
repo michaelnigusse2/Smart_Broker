@@ -6,12 +6,60 @@ import '../../../core/widgets/constrained_layout.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/todo_tile.dart';
 import '../../../core/constants/app_routes.dart';
-import '../../../mock/mock_contacts.dart';
-import '../../../mock/mock_reminders.dart';
-import '../../../mock/mock_todos.dart';
+import '../../../core/repositories/contact_repository.dart';
+import '../../../core/repositories/todo_repository.dart';
+import '../../../core/repositories/reminder_repository.dart';
+import '../../../models/contact.dart';
+import '../../../models/todo_item.dart';
+import '../../../models/reminder.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  final ContactRepository _contactRepo = ContactRepository();
+  final TodoRepository _todoRepo = TodoRepository();
+  final ReminderRepository _reminderRepo = ReminderRepository();
+
+  List<Contact> _contacts = [];
+  List<TodoItem> _pendingTodos = [];
+  List<Reminder> _upcomingReminders = [];
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    try {
+      final contacts = await _contactRepo.getAll();
+      final todos = await _todoRepo.getPending();
+      final reminders = await _reminderRepo.getUpcoming();
+
+      if (mounted) {
+        setState(() {
+          _contacts = contacts;
+          _pendingTodos = todos;
+          _upcomingReminders = reminders;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _isLoading = false;
+        });
+      }
+    }
+  }
 
   String _greeting() {
     final hour = DateTime.now().hour;
@@ -22,9 +70,22 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final recentContacts = List.of(mockContacts)..sort((a, b) => b.lastInteraction.compareTo(a.lastInteraction));
-    final pendingTodos = mockTodos.where((t) => !t.isCompleted).take(3).toList();
-    final upcomingReminders = List.of(mockReminders)..sort((a, b) => a.dateTime.compareTo(b.dateTime));
+    if (_isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_error != null) {
+      return Scaffold(
+        body: Center(child: Text('Error: $_error')),
+      );
+    }
+
+    final recentContacts = List.of(_contacts)
+      ..sort((a, b) => b.lastInteraction.compareTo(a.lastInteraction));
+    final displayTodos = _pendingTodos.take(3).toList();
+    final displayReminders = _upcomingReminders.take(2).toList();
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -35,7 +96,11 @@ class HomeScreen extends StatelessWidget {
               // ─── Header ───────────────────────────────────────────────
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.xl, AppSpacing.xxl, AppSpacing.xl, AppSpacing.xl),
+                  AppSpacing.xl,
+                  AppSpacing.xxl,
+                  AppSpacing.xl,
+                  AppSpacing.xl,
+                ),
                 sliver: SliverToBoxAdapter(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -61,17 +126,17 @@ class HomeScreen extends StatelessWidget {
                       Row(
                         children: [
                           _StatPill(
-                            label: '${mockContacts.length} Contacts',
+                            label: '${_contacts.length} Contacts',
                             icon: LucideIcons.users,
                           ),
                           const SizedBox(width: AppSpacing.sm),
                           _StatPill(
-                            label: '${pendingTodos.length} Tasks',
+                            label: '${_pendingTodos.length} Tasks',
                             icon: LucideIcons.checkSquare,
                           ),
                           const SizedBox(width: AppSpacing.sm),
                           _StatPill(
-                            label: '${upcomingReminders.length} Reminders',
+                            label: '${_upcomingReminders.length} Reminders',
                             icon: LucideIcons.bell,
                           ),
                         ],
@@ -88,26 +153,48 @@ class HomeScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const SectionHeader(title: 'Upcoming Reminders', actionLabel: 'See all'),
-                      ...upcomingReminders.take(2).map((r) => _ReminderRow(
-                            title: r.title,
-                            dateTime: r.dateTime,
-                          )),
+                      const SectionHeader(
+                        title: 'Upcoming Reminders',
+                        actionLabel: 'See all',
+                      ),
+                      ...displayReminders.map(
+                        (r) => _ReminderRow(
+                          title: r.title,
+                          dateTime: r.dateTime,
+                        ),
+                      ),
 
-                      const SectionHeader(title: 'Recent Contacts', actionLabel: 'See all'),
-                      ...recentContacts.take(3).map((contact) => _ContactRow(
-                            name: contact.name,
-                            phone: contact.phoneNumber,
-                            lastSeen: contact.lastInteraction,
-                            hasTasks: contact.pendingTasksCount > 0,
-                            onTap: () => Navigator.pushNamed(context, AppRoutes.contactDetail),
-                          )),
+                      const SectionHeader(
+                        title: 'Recent Contacts',
+                        actionLabel: 'See all',
+                      ),
+                      ...recentContacts.take(3).map(
+                            (contact) => _ContactRow(
+                              name: contact.name,
+                              phone: contact.phoneNumber,
+                              lastSeen: contact.lastInteraction,
+                              hasTasks: contact.pendingTasksCount > 0,
+                              onTap: () => Navigator.pushNamed(
+                                context,
+                                AppRoutes.contactDetail,
+                                arguments: contact.id, // Pass ID
+                              ).then((_) => _loadData()), // Reload when popping back
+                            ),
+                          ),
 
-                      const SectionHeader(title: 'Pending Tasks', actionLabel: 'See all'),
-                      ...pendingTodos.map((todo) => TodoTile(
-                            todo: todo,
-                            onChanged: (val) {},
-                          )),
+                      const SectionHeader(
+                        title: 'Pending Tasks',
+                        actionLabel: 'See all',
+                      ),
+                      ...displayTodos.map(
+                        (todo) => TodoTile(
+                          todo: todo, 
+                          onChanged: (val) async {
+                            await _todoRepo.toggleCompleted(todo.id);
+                            _loadData(); // Refresh UI
+                          },
+                        ),
+                      ),
 
                       // Space for floating nav bar
                       const SizedBox(height: 100),
@@ -133,7 +220,10 @@ class _StatPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 6),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: 6,
+      ),
       decoration: BoxDecoration(
         color: AppColors.surfaceElevated,
         borderRadius: BorderRadius.circular(20),
@@ -186,16 +276,27 @@ class _ReminderRow extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500)),
+                Text(
+                  title,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
                 const SizedBox(height: 2),
                 Text(
                   DateFormat.MMMd().add_jm().format(dateTime),
-                  style: theme.textTheme.labelSmall?.copyWith(color: AppColors.textSecondary),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
                 ),
               ],
             ),
           ),
-          Icon(LucideIcons.chevronRight, size: 16, color: AppColors.textTertiary),
+          Icon(
+            LucideIcons.chevronRight,
+            size: 16,
+            color: AppColors.textTertiary,
+          ),
         ],
       ),
     );

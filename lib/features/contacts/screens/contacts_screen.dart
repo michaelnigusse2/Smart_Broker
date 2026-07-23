@@ -4,8 +4,8 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/constrained_layout.dart';
 import '../../../core/widgets/contact_card.dart';
 import '../../../core/constants/app_routes.dart';
-import '../../../mock/mock_contacts.dart';
-import '../../../mock/mock_reminders.dart';
+import '../../../core/repositories/contact_repository.dart';
+import '../../../core/repositories/reminder_repository.dart';
 import '../../../models/contact.dart';
 
 // ─── Filter definition ───────────────────────────────────────────────────────
@@ -37,14 +37,49 @@ class ContactsScreen extends StatefulWidget {
 
 class _ContactsScreenState extends State<ContactsScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final ContactRepository _contactRepo = ContactRepository();
+  final ReminderRepository _reminderRepo = ReminderRepository();
+  
+  List<Contact> _allContacts = [];
+  Set<String> _overdueContactIds = {};
+  bool _isLoading = true;
+  String? _error;
+
   String _searchQuery = '';
   ContactFilter _activeFilter = ContactFilter.all;
 
-  // Contacts whose linked reminder is already past
-  final Set<String> _overdueContactIds = mockReminders
-      .where((r) => r.dateTime.isBefore(DateTime.now()))
-      .map((r) => r.contactId)
-      .toSet();
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    try {
+      final contacts = await _contactRepo.getAll();
+      final overdueReminders = await _reminderRepo.getUpcoming();
+      
+      final overdueIds = overdueReminders
+          .where((r) => r.dateTime.isBefore(DateTime.now()))
+          .map((r) => r.contactId)
+          .toSet();
+
+      if (mounted) {
+        setState(() {
+          _allContacts = contacts;
+          _overdueContactIds = overdueIds;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _isLoading = false;
+        });
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -54,7 +89,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
 
   List<Contact> get _filteredContacts {
     // 1. Apply search
-    var contacts = mockContacts.where((c) {
+    var contacts = _allContacts.where((c) {
       return c.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
           c.phoneNumber.contains(_searchQuery);
     }).toList();
@@ -89,8 +124,31 @@ class _ContactsScreenState extends State<ContactsScreen> {
     return contacts;
   }
 
+  int? _badgeCount(ContactFilter filter) {
+    switch (filter) {
+      case ContactFilter.hasTasks:
+        return _allContacts.where((c) => c.pendingTasksCount > 0).length;
+      case ContactFilter.overdue:
+        return _overdueContactIds.length;
+      default:
+        return null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_error != null) {
+      return Scaffold(
+        body: Center(child: Text('Error: $_error')),
+      );
+    }
+
     final filtered = _filteredContacts;
 
     return Scaffold(
@@ -120,8 +178,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
                   prefixIcon: const Icon(LucideIcons.search, size: 18),
                   suffixIcon: _searchQuery.isNotEmpty
                       ? IconButton(
-                          icon:
-                              const Icon(LucideIcons.x, size: 16),
+                          icon: const Icon(LucideIcons.x, size: 16),
                           onPressed: () {
                             _searchController.clear();
                             setState(() => _searchQuery = '');
@@ -157,7 +214,6 @@ class _ContactsScreenState extends State<ContactsScreen> {
               child: Row(
                 children: ContactFilter.values.map((filter) {
                   final isSelected = _activeFilter == filter;
-                  // Show badge count for has-tasks and overdue
                   final int? badge = _badgeCount(filter);
                   return Padding(
                     padding: const EdgeInsets.only(right: AppSpacing.sm),
@@ -244,7 +300,10 @@ class _ContactsScreenState extends State<ContactsScreen> {
                         return ContactCard(
                           contact: filtered[index],
                           onTap: () => Navigator.pushNamed(
-                              context, AppRoutes.contactDetail),
+                            context, 
+                            AppRoutes.contactDetail,
+                            arguments: filtered[index].id, // Pass ID here
+                          ).then((_) => _loadData()), // Reload when popping back
                         );
                       },
                     ),
@@ -253,17 +312,6 @@ class _ContactsScreenState extends State<ContactsScreen> {
         ),
       ),
     );
-  }
-
-  int? _badgeCount(ContactFilter filter) {
-    switch (filter) {
-      case ContactFilter.hasTasks:
-        return mockContacts.where((c) => c.pendingTasksCount > 0).length;
-      case ContactFilter.overdue:
-        return _overdueContactIds.length;
-      default:
-        return null;
-    }
   }
 }
 

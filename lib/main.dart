@@ -6,7 +6,11 @@ import 'features/contacts/screens/contact_detail_screen.dart';
 import 'features/notes/screens/add_note_screen.dart';
 import 'features/notes/screens/ai_review_screen.dart';
 
-void main() {
+import 'core/database/seed_data.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await SeedData.seedIfNeeded();
   runApp(const SmartBrokerApp());
 }
 
