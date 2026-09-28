@@ -10,6 +10,7 @@ class AppColors {
   static const surface = Color(0xFFFFFFFF); // Pure white
   static const surfaceElevated = Color(0xFFF4F4F5); // Slightly darker surface for tonal separation
   static const error = Color(0xFFEF4444); 
+  static const success = Color(0xFF10B981); // Emerald 500 
   
   static const textPrimary = Color(0xFF111111); // Deep gray/almost black
   static const textSecondary = Color(0xFF666666); // Muted gray

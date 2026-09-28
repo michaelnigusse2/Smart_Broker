@@ -5,14 +5,14 @@ import '../theme/app_theme.dart';
 class SectionHeader extends StatelessWidget {
   final String title;
   final String? actionLabel;
-  final VoidCallback? onActionPressed;
+  final VoidCallback? onActionTap;
   final EdgeInsetsGeometry? padding;
 
   const SectionHeader({
     super.key,
     required this.title,
     this.actionLabel,
-    this.onActionPressed,
+    this.onActionTap,
     this.padding,
   });
 
@@ -32,9 +32,9 @@ class SectionHeader extends StatelessWidget {
               fontWeight: FontWeight.w600,
             ),
           ),
-          if (actionLabel != null && onActionPressed != null)
+          if (actionLabel != null && onActionTap != null)
             InkWell(
-              onTap: onActionPressed,
+              onTap: onActionTap,
               borderRadius: AppRadius.button,
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs, vertical: AppSpacing.xs),

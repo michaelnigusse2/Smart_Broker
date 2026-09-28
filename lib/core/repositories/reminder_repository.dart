@@ -17,12 +17,33 @@ class ReminderRepository {
     return maps.map((m) => Reminder.fromMap(m)).toList();
   }
 
+  Future<List<Reminder>> getByNoteId(String noteId) async {
+    final db = await _db.database;
+    final maps = await db.query(
+      'reminders',
+      where: 'noteId = ?',
+      whereArgs: [noteId],
+      orderBy: 'dateTime ASC',
+    );
+    return maps.map((m) => Reminder.fromMap(m)).toList();
+  }
+
+  Future<List<Reminder>> getAll() async {
+    final db = await _db.database;
+    final maps = await db.query(
+      'reminders',
+      orderBy: 'dateTime ASC',
+    );
+    return maps.map((m) => Reminder.fromMap(m)).toList();
+  }
+
   Future<List<Reminder>> getUpcoming() async {
     final db = await _db.database;
     final now = DateTime.now().millisecondsSinceEpoch;
     final maps = await db.query(
       'reminders',
-      where: 'completed = 0',
+      where: 'completed = 0 AND dateTime >= ?',
+      whereArgs: [now],
       orderBy: 'dateTime ASC',
     );
     return maps.map((m) => Reminder.fromMap(m)).toList();
@@ -43,5 +64,16 @@ class ReminderRepository {
   Future<void> delete(String id) async {
     final db = await _db.database;
     await db.delete('reminders', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<Reminder?> getById(String id) async {
+    final db = await _db.database;
+    final maps = await db.query(
+      'reminders',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    if (maps.isEmpty) return null;
+    return Reminder.fromMap(maps.first);
   }
 }

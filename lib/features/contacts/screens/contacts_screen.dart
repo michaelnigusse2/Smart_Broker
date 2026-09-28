@@ -4,9 +4,9 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/constrained_layout.dart';
 import '../../../core/widgets/contact_card.dart';
 import '../../../core/constants/app_routes.dart';
-import '../../../core/repositories/contact_repository.dart';
+import '../../../core/services/contact_merge_service.dart';
 import '../../../core/repositories/reminder_repository.dart';
-import '../../../models/contact.dart';
+import '../../../models/unified_contact.dart';
 
 // ─── Filter definition ───────────────────────────────────────────────────────
 enum ContactFilter { all, recent, hasTasks, overdue }
@@ -22,8 +22,6 @@ extension ContactFilterLabel on ContactFilter {
         return 'Has Tasks';
       case ContactFilter.overdue:
         return 'Overdue';
-      default:
-        return 'All';
     }
   }
 }
@@ -37,10 +35,10 @@ class ContactsScreen extends StatefulWidget {
 
 class _ContactsScreenState extends State<ContactsScreen> {
   final TextEditingController _searchController = TextEditingController();
-  final ContactRepository _contactRepo = ContactRepository();
+  final ContactMergeService _mergeService = ContactMergeService();
   final ReminderRepository _reminderRepo = ReminderRepository();
   
-  List<Contact> _allContacts = [];
+  List<UnifiedContact> _allContacts = [];
   Set<String> _overdueContactIds = {};
   bool _isLoading = true;
   String? _error;
@@ -56,7 +54,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
 
   Future<void> _loadData() async {
     try {
-      final contacts = await _contactRepo.getAll();
+      final contacts = await _mergeService.getUnifiedContacts();
       final overdueReminders = await _reminderRepo.getUpcoming();
       
       final overdueIds = overdueReminders
@@ -87,7 +85,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
     super.dispose();
   }
 
-  List<Contact> get _filteredContacts {
+  List<UnifiedContact> get _filteredContacts {
     // 1. Apply search
     var contacts = _allContacts.where((c) {
       return c.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
@@ -97,14 +95,15 @@ class _ContactsScreenState extends State<ContactsScreen> {
     // 2. Apply filter
     switch (_activeFilter) {
       case ContactFilter.all:
-        contacts.sort(
-            (a, b) => b.lastInteraction.compareTo(a.lastInteraction));
+        // Already sorted alphabetically by ContactMergeService, 
+        // but let's keep the existing logic of recent first for 'All'
+        // Wait, the plan says we merge and sort alphabetically. Let's just return them.
         break;
       case ContactFilter.recent:
         // Interacted within the last 7 days
         final cutoff = DateTime.now().subtract(const Duration(days: 7));
         contacts = contacts
-            .where((c) => c.lastInteraction.isAfter(cutoff))
+            .where((c) => c.lastInteraction.isAfter(cutoff) && c.lastInteraction.millisecondsSinceEpoch > 0)
             .toList()
           ..sort((a, b) => b.lastInteraction.compareTo(a.lastInteraction));
         break;
@@ -292,20 +291,34 @@ class _ContactsScreenState extends State<ContactsScreen> {
             Expanded(
               child: filtered.isEmpty
                   ? _EmptyState(filter: _activeFilter)
-                  : ListView.builder(
-                      padding: const EdgeInsets.fromLTRB(
-                          AppSpacing.lg, 0, AppSpacing.lg, 100),
-                      itemCount: filtered.length,
-                      itemBuilder: (context, index) {
-                        return ContactCard(
-                          contact: filtered[index],
-                          onTap: () => Navigator.pushNamed(
-                            context, 
-                            AppRoutes.contactDetail,
-                            arguments: filtered[index].id, // Pass ID here
-                          ).then((_) => _loadData()), // Reload when popping back
-                        );
-                      },
+                  : RefreshIndicator(
+                      onRefresh: _loadData,
+                      child: ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(
+                            AppSpacing.lg, 0, AppSpacing.lg, 100),
+                        itemCount: filtered.length,
+                        itemBuilder: (context, index) {
+                          return ContactCard(
+                            contact: filtered[index],
+                            onTap: () {
+                              if (filtered[index].isSmartBrokerContact) {
+                                Navigator.pushNamed(
+                                  context, 
+                                  AppRoutes.contactDetail,
+                                  arguments: filtered[index].id,
+                                ).then((_) => _loadData());
+                              } else {
+                                // We will create this route
+                                Navigator.pushNamed(
+                                  context,
+                                  AppRoutes.phoneContactDetail,
+                                  arguments: filtered[index],
+                                ).then((_) => _loadData());
+                              }
+                            },
+                          );
+                        },
+                      ),
                     ),
             ),
           ],

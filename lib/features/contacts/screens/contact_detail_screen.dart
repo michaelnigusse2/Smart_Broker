@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:lucide_icons/lucide_icons.dart';
@@ -7,20 +8,127 @@ import '../../../core/widgets/constrained_layout.dart';
 import '../../../core/widgets/todo_tile.dart';
 import '../../../core/widgets/reminder_card.dart';
 import '../../../core/widgets/info_chip.dart';
-import '../../../mock/mock_contacts.dart';
-import '../../../mock/mock_notes.dart';
-import '../../../mock/mock_todos.dart';
-import '../../../mock/mock_reminders.dart';
-import '../../../mock/mock_calls.dart';
+import '../../../core/repositories/contact_repository.dart';
+import '../../../core/repositories/note_repository.dart';
+import '../../../core/repositories/todo_repository.dart';
+import '../../../core/repositories/reminder_repository.dart';
+import '../../../core/repositories/call_repository.dart';
+import '../../../core/services/call_matching_service.dart';
+import '../../../models/contact.dart';
+import '../../../models/note.dart';
+import '../../../models/todo_item.dart';
+import '../../../models/reminder.dart';
 import '../../../models/call_entry.dart';
 
-class ContactDetailScreen extends StatelessWidget {
+class ContactDetailScreen extends StatefulWidget {
   const ContactDetailScreen({super.key});
 
   @override
+  State<ContactDetailScreen> createState() => _ContactDetailScreenState();
+}
+
+class _ContactDetailScreenState extends State<ContactDetailScreen> {
+  final ContactRepository _contactRepo = ContactRepository();
+  final NoteRepository _noteRepo = NoteRepository();
+  final TodoRepository _todoRepo = TodoRepository();
+  final ReminderRepository _reminderRepo = ReminderRepository();
+  final CallRepository _callRepo = CallRepository();
+
+  String? _contactId;
+  Contact? _contact;
+  List<Note> _notes = [];
+  List<TodoItem> _todos = [];
+  List<Reminder> _reminders = [];
+  List<CallEntry> _calls = [];
+  bool _isLoading = true;
+  String? _error;
+
+  bool _initialized = false;
+  StreamSubscription<CallEntry>? _callLogSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _callLogSubscription = CallMatchingService().onCallLogged.listen((call) {
+      if (call.contactId == _contactId) {
+        _loadData();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _callLogSubscription?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_initialized) {
+      final args = ModalRoute.of(context)?.settings.arguments;
+      if (args is String) {
+        _contactId = args;
+        _initialized = true;
+        _loadData();
+      } else {
+        setState(() {
+          _error = 'No contact ID provided.';
+          _isLoading = false;
+        });
+        _initialized = true;
+      }
+    }
+  }
+
+  Future<void> _loadData() async {
+    if (_contactId == null) return;
+    try {
+      final contact = await _contactRepo.getById(_contactId!);
+      if (contact == null) {
+        throw Exception('Contact not found');
+      }
+      final notes = await _noteRepo.getByContactId(_contactId!);
+      final todos = await _todoRepo.getByContactId(_contactId!);
+      final reminders = await _reminderRepo.getByContactId(_contactId!);
+      final calls = await _callRepo.getByContactId(_contactId!);
+
+      if (mounted) {
+        setState(() {
+          _contact = contact;
+          _notes = notes;
+          _todos = todos;
+          _reminders = reminders;
+          _calls = calls;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // For mock purposes, pick the first contact
-    final contact = mockContacts.first;
+    if (_isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_error != null || _contact == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Error')),
+        body: Center(child: Text(_error ?? 'Unknown error')),
+      );
+    }
+
+    final contact = _contact!;
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -90,36 +198,89 @@ class ContactDetailScreen extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-              
-              // Collapsible Sections
-              _CollapsibleSection(
-                title: 'Notes',
-                icon: LucideIcons.fileText,
-                isExpanded: true,
-                child: _NotesList(contactId: contact.id),
-              ),
-              const Divider(height: 1),
-              _CollapsibleSection(
-                title: 'Tasks',
-                icon: LucideIcons.checkSquare,
-                isExpanded: true,
-                child: _TodosList(contactId: contact.id),
-              ),
-              const Divider(height: 1),
-              _CollapsibleSection(
-                title: 'Call History',
-                icon: LucideIcons.phoneCall,
-                isExpanded: false,
-                child: _CallsList(contactId: contact.id),
-              ),
-              const Divider(height: 1),
-              _CollapsibleSection(
-                title: 'Reminders',
-                icon: LucideIcons.bell,
-                isExpanded: false,
-                child: _RemindersList(contactId: contact.id),
-              ),
-              const SizedBox(height: AppSpacing.xxxl * 2), // FAB spacing
+                    // Collapsible Sections
+                    _CollapsibleSection(
+                      title: 'Notes',
+                      icon: LucideIcons.fileText,
+                      isExpanded: true,
+                      child: _NotesList(
+                        notes: _notes,
+                        onTap: (noteId) {
+                          Navigator.pushNamed(
+                            context,
+                            AppRoutes.noteDetail,
+                            arguments: noteId,
+                          ).then((_) => _loadData());
+                        },
+                        onDelete: (noteId) async {
+                          await _noteRepo.delete(noteId);
+                          _loadData();
+                        },
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    _CollapsibleSection(
+                      title: 'Tasks',
+                      icon: LucideIcons.checkSquare,
+                      isExpanded: true,
+                      child: _TodosList(
+                        contactId: contact.id,
+                        todos: _todos,
+                        onToggle: (id) async {
+                          await _todoRepo.toggleCompleted(id);
+                          _loadData();
+                        },
+                        onEdit: (todo, newTitle) async {
+                          await _todoRepo.update(todo.copyWith(title: newTitle));
+                          _loadData();
+                        },
+                        onDelete: (todo) async {
+                          await _todoRepo.delete(todo.id);
+                          _loadData();
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).clearSnackBars();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: const Text('Task deleted'),
+                              duration: const Duration(seconds: 5),
+                              action: SnackBarAction(
+                                label: 'Undo',
+                                onPressed: () async {
+                                  await _todoRepo.insert(todo);
+                                  _loadData();
+                                }
+                              )
+                            )
+                          );
+                        },
+                        onAdd: (title) async {
+                          final todo = TodoItem(
+                            id: '',
+                            contactId: contact.id,
+                            title: title,
+                            isCompleted: false,
+                            createdAt: DateTime.now(),
+                          );
+                          await _todoRepo.insert(todo);
+                          _loadData();
+                        },
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    _CollapsibleSection(
+                      title: 'Call History',
+                      icon: LucideIcons.phoneCall,
+                      isExpanded: false,
+                      child: _CallsList(calls: _calls),
+                    ),
+                    const Divider(height: 1),
+                    _CollapsibleSection(
+                      title: 'Reminders',
+                      icon: LucideIcons.bell,
+                      isExpanded: false,
+                      child: _RemindersList(reminders: _reminders),
+                    ),
+                    const SizedBox(height: AppSpacing.xxxl * 2), // FAB spacing
                   ],
                 ),
               ),
@@ -129,7 +290,11 @@ class ContactDetailScreen extends StatelessWidget {
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
-          Navigator.pushNamed(context, AppRoutes.addNote);
+          Navigator.pushNamed(
+            context, 
+            AppRoutes.addNote, 
+            arguments: contact.id,
+          ).then((_) => _loadData());
         },
         backgroundColor: AppColors.textPrimary,
         foregroundColor: Colors.white,
@@ -223,13 +388,18 @@ class _CollapsibleSectionState extends State<_CollapsibleSection> {
 }
 
 class _NotesList extends StatelessWidget {
-  final String contactId;
+  final List<Note> notes;
+  final Function(String) onTap;
+  final Function(String) onDelete;
 
-  const _NotesList({required this.contactId});
+  const _NotesList({
+    required this.notes,
+    required this.onTap,
+    required this.onDelete,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final notes = mockNotes.where((n) => n.contactId == contactId).toList();
     final theme = Theme.of(context);
 
     if (notes.isEmpty) {
@@ -245,92 +415,254 @@ class _NotesList extends StatelessWidget {
       itemCount: notes.length,
       itemBuilder: (context, index) {
         final note = notes[index];
-        return Padding(
-          padding: const EdgeInsets.only(left: AppSpacing.xxl, right: AppSpacing.lg, bottom: AppSpacing.xl),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Timeline line visual indicator
-              Container(
-                margin: const EdgeInsets.only(top: 6),
-                width: 2,
-                height: 16,
-                color: AppColors.divider,
-              ),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
+        return InkWell(
+          onTap: () => onTap(note.id),
+          onLongPress: () {
+            showModalBottomSheet(
+              context: context,
+              builder: (context) => SafeArea(
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Row(
-                      children: [
-                        const InfoChip(label: 'AI Summary', color: AppColors.primary),
-                        const SizedBox(width: AppSpacing.sm),
-                        Text(
-                          DateFormat.yMMMd().format(note.createdAt),
-                          style: theme.textTheme.labelSmall,
-                        ),
-                      ],
+                    ListTile(
+                      leading: const Icon(LucideIcons.fileText),
+                      title: const Text('View Details'),
+                      onTap: () {
+                        Navigator.pop(context);
+                        onTap(note.id);
+                      },
                     ),
-                    const SizedBox(height: AppSpacing.sm),
-                    Text(
-                      note.aiSummary,
-                      style: theme.textTheme.bodyMedium,
-                    ),
-                    const SizedBox(height: AppSpacing.xs),
-                    Text(
-                      '"${note.rawText}"',
-                      style: theme.textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                    ListTile(
+                      leading: const Icon(LucideIcons.trash2, color: AppColors.error),
+                      title: const Text('Delete Note', style: TextStyle(color: AppColors.error)),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _confirmDelete(context, note.id);
+                      },
                     ),
                   ],
                 ),
               ),
-            ],
+            );
+          },
+          child: Padding(
+            padding: const EdgeInsets.only(left: AppSpacing.xxl, right: AppSpacing.lg, bottom: AppSpacing.xl, top: AppSpacing.sm),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Timeline line visual indicator
+                Container(
+                  margin: const EdgeInsets.only(top: 6),
+                  width: 2,
+                  height: 16,
+                  color: AppColors.divider,
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const InfoChip(label: 'AI Summary', color: AppColors.primary),
+                          const SizedBox(width: AppSpacing.sm),
+                          Text(
+                            DateFormat.yMMMd().format(note.createdAt),
+                            style: theme.textTheme.labelSmall,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      Text(
+                        note.aiSummary,
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(
+                        '"${note.rawText}"',
+                        style: theme.textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                const Icon(LucideIcons.chevronRight, size: 16, color: AppColors.textTertiary),
+              ],
+            ),
           ),
         );
       },
     );
   }
+
+  Future<void> _confirmDelete(BuildContext context, String noteId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Note'),
+        content: const Text(
+          'This will permanently delete this note. Linked todos and reminders will not be deleted but will no longer be associated with this note.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete', style: TextStyle(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      onDelete(noteId);
+    }
+  }
 }
 
-class _TodosList extends StatelessWidget {
+class _TodosList extends StatefulWidget {
   final String contactId;
+  final List<TodoItem> todos;
+  final Function(String) onToggle;
+  final Function(TodoItem, String) onEdit;
+  final Function(TodoItem) onDelete;
+  final Function(String) onAdd;
 
-  const _TodosList({required this.contactId});
+  const _TodosList({
+    required this.contactId,
+    required this.todos, 
+    required this.onToggle,
+    required this.onEdit,
+    required this.onDelete,
+    required this.onAdd,
+  });
 
   @override
+  State<_TodosList> createState() => _TodosListState();
+}
+
+class _TodosListState extends State<_TodosList> {
+  @override
   Widget build(BuildContext context) {
-    final todos = mockTodos.where((t) => t.contactId == contactId).toList();
-
-    if (todos.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-        child: Text('No tasks.', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary)),
-      );
-    }
-
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
       child: Column(
-        children: todos.map((todo) => TodoTile(
-          todo: todo,
-          onChanged: (val) {},
-        )).toList(),
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (widget.todos.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.md),
+              child: Text('No tasks.', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary)),
+            )
+          else
+            ...widget.todos.map((todo) => Dismissible(
+              key: Key(todo.id),
+              direction: DismissDirection.endToStart,
+              background: Container(
+                alignment: Alignment.centerRight,
+                padding: const EdgeInsets.only(right: AppSpacing.md),
+                color: AppColors.error,
+                child: const Icon(LucideIcons.trash2, color: Colors.white),
+              ),
+              onDismissed: (_) => widget.onDelete(todo),
+              child: TodoTile(
+                todo: todo,
+                onChanged: (val) => widget.onToggle(todo.id),
+                onEdit: (newTitle) => widget.onEdit(todo, newTitle),
+                onDelete: () => widget.onDelete(todo),
+              ),
+            )),
+            
+          const SizedBox(height: AppSpacing.sm),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => _showAddTaskSheet(context),
+              icon: const Icon(LucideIcons.plus, size: 16),
+              label: const Text('Add Task'),
+              style: TextButton.styleFrom(
+                padding: EdgeInsets.zero,
+                foregroundColor: AppColors.primary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAddTaskSheet(BuildContext context) {
+    final controller = TextEditingController();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
+      ),
+      builder: (context) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+          left: AppSpacing.md,
+          right: AppSpacing.md,
+          top: AppSpacing.md,
+        ),
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('New Task', style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: AppSpacing.md),
+              TextField(
+                controller: controller,
+                autofocus: true,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(
+                  hintText: 'What needs to be done?',
+                  border: OutlineInputBorder(),
+                ),
+                onSubmitted: (value) {
+                  if (value.trim().isNotEmpty) {
+                    widget.onAdd(value.trim());
+                    Navigator.pop(context);
+                  }
+                },
+              ),
+              const SizedBox(height: AppSpacing.md),
+              ElevatedButton(
+                onPressed: () {
+                  if (controller.text.trim().isNotEmpty) {
+                    widget.onAdd(controller.text.trim());
+                    Navigator.pop(context);
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+                ),
+                child: const Text('Save Task'),
+              ),
+              const SizedBox(height: AppSpacing.md),
+            ],
+          ),
+        ),
       ),
     );
   }
 }
 
 class _CallsList extends StatelessWidget {
-  final String contactId;
+  final List<CallEntry> calls;
 
-  const _CallsList({required this.contactId});
+  const _CallsList({required this.calls});
 
   @override
   Widget build(BuildContext context) {
-    final calls = mockCalls.where((c) => c.contactId == contactId).toList();
     final theme = Theme.of(context);
 
     if (calls.isEmpty) {
@@ -398,14 +730,12 @@ class _CallsList extends StatelessWidget {
 }
 
 class _RemindersList extends StatelessWidget {
-  final String contactId;
+  final List<Reminder> reminders;
 
-  const _RemindersList({required this.contactId});
+  const _RemindersList({required this.reminders});
 
   @override
   Widget build(BuildContext context) {
-    final reminders = mockReminders.where((r) => r.contactId == contactId).toList();
-
     if (reminders.isEmpty) {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),

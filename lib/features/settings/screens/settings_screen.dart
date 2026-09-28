@@ -1,13 +1,266 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+import 'dart:io' show Platform;
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/constrained_layout.dart';
+import '../../../core/services/api_key_service.dart';
+import '../../../core/services/ai_service.dart';
+import '../../../core/services/call_detection_service.dart';
+import '../../../core/services/call_matching_service.dart';
+import '../../../core/services/settings_service.dart';
+import '../../../models/call_event.dart';
+import '../../../models/call_entry.dart';
 
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
   @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  final _apiKeyController = TextEditingController();
+  bool _isObscured = true;
+  bool _isChecking = false;
+  bool _hasKey = false;
+  String? _statusMessage;
+
+  // Call detection state
+  final _callDetectionService = CallDetectionService();
+  final _callMatchingService = CallMatchingService();
+  final _settingsService = SettingsService();
+  
+  bool _callPermissionGranted = false;
+  bool _callServiceRunning = false;
+  
+  bool _promptAfterCall = true;
+  int _minCallDuration = 10;
+  bool _showCallOverlay = true;
+  bool _overlayPermissionGranted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadKey();
+    _loadCallDetectionState();
+  }
+
+  Future<void> _loadKey() async {
+    final key = await ApiKeyService().getKey();
+    if (key != null && key.isNotEmpty) {
+      setState(() {
+        _apiKeyController.text = key;
+        _hasKey = true;
+        _statusMessage = 'Connected';
+      });
+    } else {
+      setState(() {
+        _hasKey = false;
+        _statusMessage = 'Not configured';
+      });
+    }
+  }
+
+  Future<void> _loadCallDetectionState() async {
+    final promptEnabled = await _settingsService.getPromptAfterCall();
+    final minDuration = await _settingsService.getMinCallDuration();
+    final showOverlay = await _settingsService.getShowCallOverlay();
+    
+    bool overlayPerm = false;
+    try {
+      overlayPerm = await FlutterOverlayWindow.isPermissionGranted();
+    } catch (_) {}
+
+    if (mounted) {
+      setState(() {
+        _promptAfterCall = promptEnabled;
+        _minCallDuration = minDuration;
+        _showCallOverlay = showOverlay;
+        _overlayPermissionGranted = overlayPerm;
+      });
+    }
+
+    if (!_callDetectionService.isSupported) return;
+    
+    final permGranted = await _callDetectionService.isPermissionGranted();
+    final running = await _callDetectionService.isRunning();
+    
+    if (mounted) {
+      setState(() {
+        _callPermissionGranted = permGranted;
+        _callServiceRunning = running;
+      });
+    }
+  }
+
+  Future<void> _saveKey() async {
+    final key = _apiKeyController.text.trim();
+    if (key.isEmpty) {
+      await ApiKeyService().deleteKey();
+      setState(() {
+        _hasKey = false;
+        _statusMessage = 'Not configured';
+      });
+      return;
+    }
+
+    setState(() {
+      _isChecking = true;
+      _statusMessage = 'Validating...';
+    });
+
+    final aiService = AiService(apiKey: key);
+    final result = await aiService.validateKey();
+
+    if (!mounted) return;
+
+    if (result == 'valid') {
+      await ApiKeyService().saveKey(key);
+      if (!mounted) return;
+      setState(() {
+        _hasKey = true;
+        _statusMessage = 'Connected';
+        _isChecking = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('API Key saved successfully')),
+      );
+    } else {
+      if (!mounted) return;
+      setState(() {
+        _statusMessage = 'Failed: $result';
+        _isChecking = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to validate API Key'), backgroundColor: AppColors.error),
+      );
+    }
+  }
+
+  Future<void> _toggleCallDetection(bool enable) async {
+    if (enable) {
+      // Request permission first
+      if (!_callPermissionGranted) {
+        final granted = await _callDetectionService.requestPermission();
+        if (!mounted) return;
+        setState(() => _callPermissionGranted = granted);
+        if (!granted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Phone permission is required for call detection')),
+          );
+          return;
+        }
+      }
+      // Start the service
+      final started = await _callDetectionService.start();
+      if (started) {
+        _callMatchingService.startListening();
+      }
+      if (!mounted) return;
+      setState(() => _callServiceRunning = started);
+    } else {
+      await _callDetectionService.stop();
+      _callMatchingService.stopListening();
+      if (!mounted) return;
+      setState(() => _callServiceRunning = false);
+    }
+  }
+
+  void _showSimulateCallDialog() {
+    final phoneController = TextEditingController(text: '+1234567890');
+    String selectedType = 'incoming';
+    final durationController = TextEditingController(text: '60');
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Simulate Call'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: phoneController,
+                decoration: const InputDecoration(
+                  labelText: 'Phone Number',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.phone,
+              ),
+              const SizedBox(height: AppSpacing.md),
+              DropdownButtonFormField<String>(
+                initialValue: selectedType,
+                decoration: const InputDecoration(
+                  labelText: 'Call Type',
+                  border: OutlineInputBorder(),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'incoming', child: Text('Incoming')),
+                  DropdownMenuItem(value: 'outgoing', child: Text('Outgoing')),
+                  DropdownMenuItem(value: 'missed', child: Text('Missed')),
+                ],
+                onChanged: (val) {
+                  if (val != null) setDialogState(() => selectedType = val);
+                },
+              ),
+              const SizedBox(height: AppSpacing.md),
+              TextField(
+                controller: durationController,
+                decoration: const InputDecoration(
+                  labelText: 'Duration (seconds)',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.number,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final callType = switch (selectedType) {
+                  'incoming' => CallType.incoming,
+                  'outgoing' => CallType.outgoing,
+                  _ => CallType.missed,
+                };
+
+                final event = CallEvent(
+                  phoneNumber: phoneController.text.trim(),
+                  type: callType,
+                  duration: Duration(seconds: int.tryParse(durationController.text) ?? 0),
+                  timestamp: DateTime.now(),
+                );
+
+                Navigator.pop(ctx);
+                await _callMatchingService.handleCallEvent(event);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Simulated $selectedType call logged')),
+                  );
+                }
+              },
+              child: const Text('Simulate'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _apiKeyController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final isAndroid = Platform.isAndroid;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Settings'),
@@ -27,12 +280,71 @@ class SettingsScreen extends StatelessWidget {
             const Divider(height: 1),
             
             _buildSectionHeader(context, 'AI Integration'),
-            ListTile(
-              leading: const Icon(LucideIcons.sparkles),
-              title: const Text('AI Status'),
-              subtitle: const Text('Connected (Mock Mode)'),
-              trailing: const Icon(LucideIcons.checkCircle2, color: AppColors.primary, size: 20),
-              onTap: () {},
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.md),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('NVIDIA API Key', style: TextStyle(fontWeight: FontWeight.w500)),
+                  if (_statusMessage != null) ...[
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      _statusMessage!,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: _hasKey ? AppColors.primary : AppColors.error,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      maxLines: null,
+                    ),
+                  ],
+                  const SizedBox(height: AppSpacing.sm),
+                  TextField(
+                    controller: _apiKeyController,
+                    obscureText: _isObscured,
+                    decoration: InputDecoration(
+                      hintText: 'Enter your API key',
+                      border: const OutlineInputBorder(),
+                      suffixIcon: IconButton(
+                        icon: Icon(_isObscured ? LucideIcons.eye : LucideIcons.eyeOff),
+                        onPressed: () {
+                          setState(() {
+                            _isObscured = !_isObscured;
+                          });
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Visit build.nvidia.com to get a key')),
+                            );
+                          },
+                          child: const Text('Get Key'),
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.md),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: _isChecking ? null : _saveKey,
+                          child: _isChecking
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Text('Save'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
             ListTile(
               leading: const Icon(LucideIcons.history),
@@ -42,6 +354,133 @@ class SettingsScreen extends StatelessWidget {
             ),
             const Divider(height: 1),
 
+            // ── Call Detection Section ──────────────────────────────
+            _buildSectionHeader(context, 'Call Detection'),
+            if (!isAndroid)
+              const ListTile(
+                leading: Icon(LucideIcons.phoneOff, color: AppColors.textTertiary),
+                title: Text('Not available on iOS'),
+                subtitle: Text('Call detection requires Android'),
+              )
+            else ...[
+              SwitchListTile(
+                secondary: Icon(
+                  LucideIcons.phoneCall,
+                  color: _callServiceRunning ? AppColors.primary : AppColors.textTertiary,
+                ),
+                title: const Text('Call Detection'),
+                subtitle: Text(
+                  _callServiceRunning
+                      ? 'Service running'
+                      : (_callPermissionGranted ? 'Service stopped' : 'Permission required'),
+                  style: TextStyle(
+                    color: _callServiceRunning ? AppColors.primary : AppColors.textSecondary,
+                    fontSize: 12,
+                  ),
+                ),
+                value: _callServiceRunning,
+                activeThumbColor: AppColors.primary,
+                onChanged: _toggleCallDetection,
+              ),
+              if (!_callPermissionGranted)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                  child: OutlinedButton.icon(
+                    icon: const Icon(LucideIcons.shield, size: 16),
+                    label: const Text('Grant Permissions'),
+                    onPressed: () async {
+                      final messenger = ScaffoldMessenger.of(context);
+                      final granted = await _callDetectionService.requestPermission();
+                      if (!mounted) return;
+                      setState(() => _callPermissionGranted = granted);
+                      messenger.showSnackBar(
+                        SnackBar(content: Text(granted ? 'Permissions granted' : 'Permissions denied')),
+                      );
+                    },
+                  ),
+                ),
+                
+              if (_callPermissionGranted && _callServiceRunning) ...[
+                const Divider(),
+                SwitchListTile(
+                  title: const Text('Prompt after calls'),
+                  subtitle: const Text('Show a notification to add notes when a call ends'),
+                  value: _promptAfterCall,
+                  activeThumbColor: AppColors.primary,
+                  onChanged: (val) async {
+                    await _settingsService.setPromptAfterCall(val);
+                    setState(() => _promptAfterCall = val);
+                  },
+                ),
+                if (_promptAfterCall)
+                  Padding(
+                    padding: const EdgeInsets.only(left: AppSpacing.xl, right: AppSpacing.xl, bottom: AppSpacing.md),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Minimum call duration'),
+                            Text('$_minCallDuration seconds', style: const TextStyle(fontWeight: FontWeight.w500)),
+                          ],
+                        ),
+                        Slider(
+                          value: _minCallDuration.toDouble(),
+                          min: 0,
+                          max: 60,
+                          divisions: 12,
+                          activeColor: AppColors.primary,
+                          onChanged: (val) {
+                            setState(() => _minCallDuration = val.toInt());
+                          },
+                          onChangeEnd: (val) async {
+                            await _settingsService.setMinCallDuration(val.toInt());
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                
+                const Divider(),
+                SwitchListTile(
+                  title: const Text('Show live call overlay'),
+                  subtitle: const Text('Show a floating note-taking window during calls'),
+                  value: _showCallOverlay,
+                  activeThumbColor: AppColors.primary,
+                  onChanged: (val) async {
+                    await _settingsService.setShowCallOverlay(val);
+                    setState(() => _showCallOverlay = val);
+                  },
+                ),
+                if (_showCallOverlay && !_overlayPermissionGranted)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                    child: OutlinedButton.icon(
+                      icon: const Icon(LucideIcons.monitor, size: 16),
+                      label: const Text('Grant Overlay Permission'),
+                      onPressed: () async {
+                        try {
+                          await FlutterOverlayWindow.requestPermission();
+                          final granted = await FlutterOverlayWindow.isPermissionGranted();
+                          if (!context.mounted) return;
+                          setState(() => _overlayPermissionGranted = granted);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(granted ? 'Overlay permission granted' : 'Overlay permission denied')),
+                          );
+                        } catch (e) {
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Error: $e')),
+                          );
+                        }
+                      },
+                    ),
+                  ),
+              ],
+            ],
+            const Divider(height: 1),
+
             _buildSectionHeader(context, 'Developer Tools'),
             ListTile(
               leading: const Icon(LucideIcons.bug),
@@ -49,9 +488,17 @@ class SettingsScreen extends StatelessWidget {
               trailing: const Icon(LucideIcons.chevronRight, size: 20),
               onTap: () {},
             ),
+            if (isAndroid)
+              ListTile(
+                leading: const Icon(LucideIcons.phoneForwarded),
+                title: const Text('Simulate Call'),
+                subtitle: const Text('Test call detection pipeline'),
+                trailing: const Icon(LucideIcons.chevronRight, size: 20),
+                onTap: _showSimulateCallDialog,
+              ),
             ListTile(
               leading: const Icon(LucideIcons.trash2),
-              title: const Text('Reset Mock Data'),
+              title: const Text('Reset Data'),
               trailing: const Icon(LucideIcons.chevronRight, size: 20),
               onTap: () {},
             ),
@@ -59,7 +506,7 @@ class SettingsScreen extends StatelessWidget {
             const SizedBox(height: AppSpacing.xxl),
             const Center(
               child: Text(
-                'SmartBroker v1.0.0-mock\nPhase 1 UI Skeleton',
+                'SmartBroker v1.0.0\nPhase 8 Call Detection',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: AppColors.textTertiary, fontSize: 12),
               ),

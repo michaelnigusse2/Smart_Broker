@@ -159,8 +159,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       ...displayReminders.map(
                         (r) => _ReminderRow(
+                          id: r.id,
                           title: r.title,
                           dateTime: r.dateTime,
+                          onReload: _loadData,
                         ),
                       ),
 
@@ -169,26 +171,35 @@ class _HomeScreenState extends State<HomeScreen> {
                         actionLabel: 'See all',
                       ),
                       ...recentContacts.take(3).map(
-                            (contact) => _ContactRow(
-                              name: contact.name,
-                              phone: contact.phoneNumber,
-                              lastSeen: contact.lastInteraction,
-                              hasTasks: contact.pendingTasksCount > 0,
-                              onTap: () => Navigator.pushNamed(
-                                context,
-                                AppRoutes.contactDetail,
-                                arguments: contact.id, // Pass ID
-                              ).then((_) => _loadData()), // Reload when popping back
-                            ),
+                            (contact) {
+                              final hasOverdue = _pendingTodos.any((t) => 
+                                  t.contactId == contact.id && 
+                                  t.createdAt.isBefore(DateTime.now().subtract(const Duration(days: 7)))
+                              );
+                              return _ContactRow(
+                                name: contact.name,
+                                phone: contact.phoneNumber,
+                                lastSeen: contact.lastInteraction,
+                                hasTasks: contact.pendingTasksCount > 0,
+                                hasOverdueTasks: hasOverdue,
+                                onTap: () => Navigator.pushNamed(
+                                  context,
+                                  AppRoutes.contactDetail,
+                                  arguments: contact.id, // Pass ID
+                                ).then((_) => _loadData()), // Reload when popping back
+                              );
+                            },
                           ),
 
-                      const SectionHeader(
+                      SectionHeader(
                         title: 'Pending Tasks',
                         actionLabel: 'See all',
+                        onActionTap: () => Navigator.pushNamed(context, AppRoutes.tasks).then((_) => _loadData()),
                       ),
                       ...displayTodos.map(
                         (todo) => TodoTile(
                           todo: todo, 
+                          showChevron: true,
                           onChanged: (val) async {
                             await _todoRepo.toggleCompleted(todo.id);
                             _loadData(); // Refresh UI
@@ -249,10 +260,17 @@ class _StatPill extends StatelessWidget {
 
 // ─── Reminder Row ─────────────────────────────────────────────────────────────
 class _ReminderRow extends StatelessWidget {
+  final String id;
   final String title;
   final DateTime dateTime;
+  final VoidCallback onReload;
 
-  const _ReminderRow({required this.title, required this.dateTime});
+  const _ReminderRow({
+    required this.id,
+    required this.title,
+    required this.dateTime,
+    required this.onReload,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -261,43 +279,49 @@ class _ReminderRow extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.md),
-      child: Row(
-        children: [
-          Container(
-            width: 3,
-            height: 36,
-            decoration: BoxDecoration(
-              color: isOverdue ? AppColors.error : AppColors.primary,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          const SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w500,
-                  ),
+      child: InkWell(
+        onTap: () {
+          Navigator.pushNamed(context, AppRoutes.reminderDetail, arguments: id).then((_) => onReload());
+        },
+        borderRadius: BorderRadius.circular(4),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            children: [
+              Container(
+                width: 3,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: isOverdue ? AppColors.error : AppColors.primary,
+                  borderRadius: BorderRadius.circular(2),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  DateFormat.MMMd().add_jm().format(dateTime),
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: AppColors.textSecondary,
-                  ),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      DateFormat.MMMd().add_jm().format(dateTime),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              const Icon(LucideIcons.chevronRight, size: 16, color: AppColors.textTertiary),
+            ],
           ),
-          Icon(
-            LucideIcons.chevronRight,
-            size: 16,
-            color: AppColors.textTertiary,
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -309,6 +333,7 @@ class _ContactRow extends StatelessWidget {
   final String phone;
   final DateTime lastSeen;
   final bool hasTasks;
+  final bool hasOverdueTasks;
   final VoidCallback onTap;
 
   const _ContactRow({
@@ -316,6 +341,7 @@ class _ContactRow extends StatelessWidget {
     required this.phone,
     required this.lastSeen,
     required this.hasTasks,
+    this.hasOverdueTasks = false,
     required this.onTap,
   });
 
@@ -365,8 +391,8 @@ class _ContactRow extends StatelessWidget {
                   Container(
                     width: 6,
                     height: 6,
-                    decoration: const BoxDecoration(
-                      color: AppColors.primary,
+                    decoration: BoxDecoration(
+                      color: hasOverdueTasks ? Colors.orange : AppColors.primary,
                       shape: BoxShape.circle,
                     ),
                   ),

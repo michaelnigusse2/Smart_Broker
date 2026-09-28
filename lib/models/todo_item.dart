@@ -51,15 +51,16 @@ class TodoItem {
     bool? isCompleted,
     DateTime? createdAt,
     DateTime? completedAt,
+    bool clearCompletedAt = false,
   }) {
     return TodoItem(
       id: id ?? this.id,
       contactId: contactId ?? this.contactId,
-      noteId: noteId ?? this.noteId,
       title: title ?? this.title,
       isCompleted: isCompleted ?? this.isCompleted,
       createdAt: createdAt ?? this.createdAt,
-      completedAt: completedAt ?? this.completedAt,
+      noteId: noteId ?? this.noteId,
+      completedAt: clearCompletedAt ? null : (completedAt ?? this.completedAt),
     );
   }
 }

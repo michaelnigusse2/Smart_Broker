@@ -1,16 +1,37 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons/lucide_icons.dart';
 import '../../models/todo_item.dart';
 import '../theme/app_theme.dart';
 
 class TodoTile extends StatelessWidget {
   final TodoItem todo;
   final ValueChanged<bool?>? onChanged;
+  final Function(String)? onEdit;
+  final VoidCallback? onDelete;
+  final bool isBulkMode;
+  final bool isSelected;
+  final String? subtitleText;
+  final VoidCallback? onTapSubtitle;
+  final bool showChevron;
 
   const TodoTile({
     super.key,
     required this.todo,
     this.onChanged,
+    this.onEdit,
+    this.onDelete,
+    this.isBulkMode = false,
+    this.isSelected = false,
+    this.subtitleText,
+    this.onTapSubtitle,
+    this.showChevron = false,
   });
+
+  bool get isOverdue {
+    if (todo.isCompleted) return false;
+    final cutoff = DateTime.now().subtract(const Duration(days: 7));
+    return todo.createdAt.isBefore(cutoff);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -18,22 +39,173 @@ class TodoTile extends StatelessWidget {
     
     return Container(
       margin: const EdgeInsets.only(bottom: AppSpacing.xs),
-      // Flat list item, no borders or background for minimal density
-      child: CheckboxListTile(
-        value: todo.isCompleted,
-        onChanged: onChanged,
-        title: Text(
-          todo.title,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            decoration: todo.isCompleted ? TextDecoration.lineThrough : null,
-            color: todo.isCompleted ? AppColors.textTertiary : AppColors.textPrimary,
-          ),
-        ),
-        controlAffinity: ListTileControlAffinity.leading,
-        activeColor: AppColors.primary,
-        contentPadding: EdgeInsets.zero, // Minimal spacing
+      decoration: BoxDecoration(
+        color: isSelected ? AppColors.primary.withValues(alpha: 0.1) : Colors.transparent,
+        borderRadius: AppRadius.card,
+      ),
+      child: ListTile(
+        contentPadding: EdgeInsets.zero,
         visualDensity: VisualDensity.compact,
-        checkboxShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+        leading: Checkbox(
+          value: isBulkMode ? isSelected : todo.isCompleted,
+          onChanged: onChanged,
+          activeColor: AppColors.primary,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+        ),
+        title: Row(
+          children: [
+            Expanded(
+              child: GestureDetector(
+                onTap: isBulkMode ? null : () => _showEditDialog(context),
+                child: Text(
+                  todo.title,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    decoration: todo.isCompleted ? TextDecoration.lineThrough : null,
+                    color: todo.isCompleted ? AppColors.textTertiary : AppColors.textPrimary,
+                  ),
+                ),
+              ),
+            ),
+            if (isOverdue && !isBulkMode)
+              Container(
+                margin: const EdgeInsets.only(left: AppSpacing.sm),
+                width: 8,
+                height: 8,
+                decoration: const BoxDecoration(
+                  color: Colors.orange,
+                  shape: BoxShape.circle,
+                ),
+              ),
+          ],
+        ),
+        subtitle: subtitleText != null
+            ? GestureDetector(
+                onTap: onTapSubtitle,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    subtitleText!,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+              )
+            : null,
+        trailing: isBulkMode 
+            ? null 
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (showChevron)
+                    const Icon(LucideIcons.chevronRight, size: 16, color: AppColors.textTertiary),
+                  if (onDelete != null || onEdit != null)
+                    PopupMenuButton<String>(
+                      icon: const Icon(LucideIcons.moreVertical, size: 16, color: AppColors.textTertiary),
+                      onSelected: (value) {
+                        if (value == 'edit') _showEditDialog(context);
+                        if (value == 'delete') _confirmDelete(context);
+                      },
+                      itemBuilder: (context) => [
+                        if (onEdit != null)
+                          const PopupMenuItem(
+                            value: 'edit',
+                            child: Row(
+                              children: [
+                                Icon(LucideIcons.edit2, size: 16),
+                                SizedBox(width: AppSpacing.sm),
+                                Text('Edit'),
+                              ],
+                            ),
+                          ),
+                        if (onDelete != null)
+                          const PopupMenuItem(
+                            value: 'delete',
+                            child: Row(
+                              children: [
+                                Icon(LucideIcons.trash2, size: 16, color: AppColors.error),
+                                SizedBox(width: AppSpacing.sm),
+                                Text('Delete', style: TextStyle(color: AppColors.error)),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+                ],
+              ),
+        onTap: () {
+          if (isBulkMode) {
+            onChanged?.call(!isSelected);
+          } else {
+            // Default list tile tap could toggle checkbox, but let's just make it toggle checkbox
+            onChanged?.call(!todo.isCompleted);
+          }
+        },
+      ),
+    );
+  }
+
+  void _showEditDialog(BuildContext context) {
+    if (onEdit == null) return;
+    
+    final controller = TextEditingController(text: todo.title);
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Task'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: 'Task title',
+          ),
+          textCapitalization: TextCapitalization.sentences,
+          onSubmitted: (value) {
+            if (value.trim().isNotEmpty) {
+              Navigator.pop(context);
+              onEdit!(value.trim());
+            }
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              if (controller.text.trim().isNotEmpty) {
+                Navigator.pop(context);
+                onEdit!(controller.text.trim());
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmDelete(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Task'),
+        content: const Text('Are you sure you want to delete this task?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              onDelete?.call();
+            },
+            child: const Text('Delete', style: TextStyle(color: AppColors.error)),
+          ),
+        ],
       ),
     );
   }
