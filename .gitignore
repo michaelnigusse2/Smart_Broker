@@ -43,3 +43,9 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Local dev runner output (tool/dev_runner.bat)
+build_logs/
+
+# Copies of assistant outputs
+Claude outputs/

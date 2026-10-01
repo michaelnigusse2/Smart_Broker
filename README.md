@@ -1,212 +1,142 @@
 # SmartBroker
 
-A modern, minimalist AI-assisted CRM application for brokers and professionals, built with Flutter.
+An AI-assisted, contact-centric CRM for brokers, built with Flutter (Android-first).
 
-> **Phase 1 — UI Skeleton**
-> This release covers the complete, production-quality UI foundation using mock data. Backend integration, AI processing, and native Android services are planned for Phase 2.
-
----
-
-## Overview
-
-SmartBroker is a contact-centric mobile CRM designed to help brokers manage client relationships, track conversations, handle follow-up tasks, and organize reminders — all in one clean interface.
-
-The design philosophy is **minimalist productivity**: inspired by tools like Notion and Linear, the UI favours generous whitespace, strong typography hierarchy, and a single Indigo accent colour over visual clutter.
+Write a quick note after a call or meeting and SmartBroker turns it into a clean
+summary, a list of action items, and a follow-up reminder — all linked to the contact.
+On Android it can also detect phone calls, log them automatically, and prompt you
+to take notes while the conversation is still fresh.
 
 ---
 
-## Screenshots
+## Status
 
-> Run the app locally to see the UI in action (see [Running Locally](#running-locally)).
+| Area | State |
+|---|---|
+| UI (home, contacts, calendar, tasks, notes, settings) | Working |
+| Local database (SQLite) + repositories | Working — demo data is seeded on first launch |
+| Phone-book import / merge | Working |
+| AI note analysis | Working — OpenAI-compatible providers (Groq by default) |
+| Reminder notifications | Working |
+| Call detection + auto call log (Android) | Working, needs device testing |
+| Live call overlay (Android) | Working, needs device testing |
 
 ---
 
 ## Features
 
-### 📱 Navigation
-- Floating glassmorphism bottom navigation bar with smooth icon transitions
-- Persistent tab state using `IndexedStack`
-- Named routing across all screens
-
-### 🏠 Home Dashboard
-- Time-aware greeting ("Good morning / afternoon / evening")
-- Live stat pills — total contacts, pending tasks, upcoming reminders
-- Upcoming reminders with overdue accent indicators
-- Recent contacts with task-status dots
-- Pending tasks checklist
-
-### 👥 Contacts
-- Searchable contact list with live search and a clear button
-- **Functional filter system** (no backend required):
-  - **All** — all contacts sorted by last interaction
-  - **Recent** — contacts active within the last 7 days
-  - **Has Tasks** — contacts with pending tasks, sorted by task count
-  - **Overdue** — contacts linked to a past-due reminder
-- Filter pills with badge counts for Has Tasks and Overdue
-- Contact cards with Indigo avatar ring for contacts needing attention
-
-### 👤 Contact Detail
-- Pinned header: name, phone, last interaction
-- Fluid collapsible sections (Notion-style):
-  - **Notes** — timeline view with AI summary + raw note preview
-  - **Tasks** — minimalist checkbox list
-  - **Call History** — typed call log (incoming / outgoing / missed)
-  - **Reminders** — compact event rows
-- "Add Note" floating action button
-
-### ✍️ Add Note
-- Distraction-free, full-screen writing canvas
-- One-tap hand-off to AI Review
-
-### 🤖 AI Review
-- Simulated AI processing with a minimal loading indicator
-- Editable **Summary** text field
-- Extracted **Action Items** checklist
-- Toggleable **Suggested Reminder**
-- "Save to Profile" commit action
-
-### 📅 Calendar
-- `table_calendar` integration with full custom cell rendering:
-  - Today highlighted with a soft Indigo tint
-  - Selected day with a solid Indigo circle
-  - Event dots **always below** the date number (never overlapping)
-- Tappable cells that update the event list below
-- Timeline-style event list for the selected date
-
-### ⚙️ Settings
-- Appearance, AI integration, and developer tool sections
-- Ready for Phase 2 configuration hooks
+- **Home** — greeting, stats, upcoming reminders, recent contacts, pending tasks.
+- **Contacts** — SmartBroker contacts merged with the device phone book, search and
+  filters (All / Recent / Has Tasks / Overdue). Phone-only contacts can be added to SmartBroker.
+- **Contact detail** — notes timeline, tasks, call history, reminders.
+- **Notes → AI Review** — write a note, the AI proposes a summary, action items and a
+  reminder; edit anything and save it to the contact.
+- **Tasks** — all tasks across contacts with filters, sorting and bulk actions.
+- **Calendar** — month view with reminder dots, reminder detail/edit, local notifications.
+- **Call detection (Android)** — foreground service watches call state, reads the call
+  log when a call ends, matches the number to a contact, logs it, and sends a
+  "Tap to add a note" notification.
+- **Call overlay (Android)** — floating panel during a call for taking notes; drafts auto-save.
+- **Settings** — AI provider / key / model, call detection options, and a
+  "Simulate Call" debug tool.
 
 ---
 
-## Tech Stack
+## AI setup
+
+The app talks to any OpenAI-compatible chat-completions API. Pick a provider in
+**Settings → AI Integration**, paste a key and tap **Save** (the key is validated first).
+
+| Provider | Default model | Get a key |
+|---|---|---|
+| **Groq** (default, free tier, no card) | `openai/gpt-oss-20b` | console.groq.com/keys |
+| OpenRouter (free `:free` models) | `openai/gpt-oss-120b:free` | openrouter.ai/keys |
+| NVIDIA NIM | `meta/llama-3.1-8b-instruct` | build.nvidia.com |
+
+Free tiers and model IDs change often. If a model stops working, type a new model ID
+into the **Model** field — no app update needed. Keys are stored with
+`flutter_secure_storage`, one per provider.
+
+Providers are defined in `lib/core/services/ai_provider.dart`.
+
+---
+
+## Tech stack
 
 | Layer | Technology |
 |---|---|
-| Framework | Flutter 3.x (Material 3) |
-| Language | Dart |
-| Typography | `google_fonts` — Inter |
-| Calendar | `table_calendar` |
-| Icons | `lucide_icons` |
-| Date formatting | `intl` |
-| State | Local `StatefulWidget` (Phase 1) |
-| Data | Hardcoded mock data (`lib/mock/`) |
+| Framework | Flutter (Material 3), Dart ≥ 3.11 |
+| Storage | `sqflite` (data), `shared_preferences` (settings), `flutter_secure_storage` (API keys) |
+| AI | OpenAI-compatible HTTP API via `http` |
+| Notifications | `flutter_local_notifications`, `timezone`, `flutter_timezone` |
+| Contacts | `flutter_contacts` |
+| Call overlay | `flutter_overlay_window` |
+| Native | Kotlin `CallDetectionService` + `CallDetectionPlugin` (Method/Event channels) |
+| UI | `google_fonts` (Inter), `lucide_icons`, `table_calendar`, `intl` |
+| State | Local `StatefulWidget` + repositories |
 
 ---
 
-## Project Structure
+## Project structure
 
 ```
 lib/
+├── main.dart                 # App entry, routes, overlay entry point (overlayMain)
 ├── core/
-│   ├── constants/
-│   │   └── app_routes.dart         # All named route constants
-│   ├── theme/
-│   │   └── app_theme.dart          # AppTheme, AppColors, AppSpacing, AppRadius
-│   └── widgets/                    # Reusable components
-│       ├── constrained_layout.dart # Max-width wrapper (tablet/web safe)
-│       ├── contact_card.dart
-│       ├── empty_state_widget.dart
-│       ├── info_chip.dart
-│       ├── reminder_card.dart
-│       ├── section_header.dart
-│       └── todo_tile.dart
+│   ├── constants/            # Named routes
+│   ├── database/             # DatabaseHelper (schema), SeedData (demo data)
+│   ├── repositories/         # Contact, Note, Todo, Reminder, Call repositories
+│   ├── services/             # AI, API keys, settings, notifications, contacts merge,
+│   │                         #   call detection/matching, overlay drafts
+│   ├── theme/                # AppTheme, AppColors, AppSpacing, AppRadius
+│   └── widgets/              # Shared UI components
 ├── features/
-│   ├── calendar/
-│   │   └── screens/calendar_screen.dart
-│   ├── contacts/
-│   │   └── screens/
-│   │       ├── contact_detail_screen.dart
-│   │       └── contacts_screen.dart
-│   ├── home/
-│   │   └── screens/
-│   │       ├── home_screen.dart
-│   │       └── main_shell.dart     # Root scaffold + floating bottom nav
-│   ├── notes/
-│   │   └── screens/
-│   │       ├── add_note_screen.dart
-│   │       └── ai_review_screen.dart
-│   └── settings/
-│       └── screens/settings_screen.dart
-├── mock/                           # All mock data (replace with repositories in Phase 2)
-│   ├── mock_calls.dart
-│   ├── mock_contacts.dart
-│   ├── mock_notes.dart
-│   ├── mock_reminders.dart
-│   └── mock_todos.dart
-├── models/                         # Domain models
-│   ├── call_entry.dart
-│   ├── contact.dart
-│   ├── note.dart
-│   ├── reminder.dart
-│   └── todo_item.dart
-└── main.dart
+│   ├── calendar/             # Calendar, reminder detail
+│   ├── calls/                # Live call overlay
+│   ├── contacts/             # Contacts list, contact detail, phone-contact detail
+│   ├── home/                 # Main shell (bottom nav), home dashboard
+│   ├── notes/                # Add note, AI review, note detail, notes list
+│   ├── settings/             # Settings
+│   └── todos/                # Tasks
+├── mock/                     # Demo data used by SeedData on first launch
+└── models/                   # Domain models
+android/app/src/main/kotlin/… # CallDetectionService.kt, CallDetectionPlugin.kt
+test/                         # Unit tests (call detection, AI response parsing)
 ```
 
----
+### Data model
 
-## Design System
-
-### Colours
-| Token | Hex | Usage |
-|---|---|---|
-| `primary` | `#4F46E5` | Accent, active states, selected nav |
-| `background` | `#FAFAFA` | App scaffold background |
-| `surface` | `#FFFFFF` | Card and panel backgrounds |
-| `surfaceElevated` | `#F4F4F5` | Input fills, filter chips, avatars |
-| `textPrimary` | `#111111` | Headings, labels |
-| `textSecondary` | `#666666` | Metadata, subtitles |
-| `textTertiary` | `#A1A1AA` | Timestamps, placeholders |
-| `divider` | `#EAEAEA` | Separators |
-| `error` | `#EF4444` | Overdue indicators |
-
-### Spacing Scale
-`4 → 8 → 12 → 16 → 24 → 32 → 48`
-
-### Border Radius
-`sm: 8` · `md: 12` · `lg: 16` · `xl: 24`
+`contacts` 1—* `notes`, `todos`, `reminders`, `calls`. Todos and reminders can link
+back to the note that created them (`noteId`). Deleting a contact cascades.
 
 ---
 
-## Running Locally
-
-**Prerequisites:** Flutter SDK ≥ 3.0, Android SDK (minSdk 21)
+## Running locally
 
 ```bash
-# 1. Clone the repository
-git clone <repo-url>
-cd smart_broker
-
-# 2. Install dependencies
 flutter pub get
-
-# 3. Run in debug mode
-flutter run
+flutter run          # pick an Android device/emulator for call features
+flutter analyze
+flutter test
 ```
 
-Choose your target device when prompted (Android emulator, Chrome, or Windows desktop).
+Call detection and the overlay only work on a real Android device. Use
+**Settings → Developer Tools → Simulate Call** to test the call-logging flow without one.
 
-> **Hot restart vs hot reload**
-> If you change enum definitions or `main.dart`, always use **`R`** (hot restart) rather than `r` (hot reload) to avoid stale state errors.
+> After changing enums or `main.dart`, use hot restart (`R`), not hot reload.
 
 ---
 
-## Roadmap
+## Known issues / next up
 
-### Phase 2 — Data & Persistence
-- [ ] Local database (SQLite / Hive)
-- [ ] Repository pattern replacing `lib/mock/`
-- [ ] Contact import from device phonebook
-
-### Phase 3 — AI Integration
-- [ ] Gemini API / Ollama for note processing
-- [ ] Automatic summary, task, and reminder extraction
-- [ ] Replace simulated `Future.delayed` in `ai_review_screen.dart`
-
-### Phase 4 — Native Android
-- [ ] Background call detection service
-- [ ] System-wide call overlay
-- [ ] Push notification reminders
+- Call detection only works while the app process is alive (open or in the background);
+  if Android kills the app, calls aren't detected until it's opened again.
+- The call overlay can't bring the app to the front. After "Save & Process", open
+  SmartBroker (or tap the post-call notification) and AI Review opens automatically.
+- For outgoing calls the caller's name appears in the overlay only when the call ends.
+- Unknown numbers are auto-created as contacts (an "unassigned calls" inbox is planned).
+- "Add contact" and the contact "⋯" menu are placeholders; the Notes list screen has no entry point.
+- The home greeting name is hardcoded.
 
 ---
 
