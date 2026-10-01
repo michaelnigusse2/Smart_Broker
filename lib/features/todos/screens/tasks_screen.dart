@@ -35,6 +35,7 @@ class _TasksScreenState extends State<TasksScreen> {
   }
 
   Future<void> _loadTodos() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
     final String? filterArg = _activeFilter == 'all' ? null : _activeFilter;
     final todos = await _todoRepo.getAll(filter: filterArg, sortBy: _activeSort);
@@ -92,11 +93,8 @@ class _TasksScreenState extends State<TasksScreen> {
       _isBulkMode = false;
       _selectedIds.clear();
     });
-    // This is simple toggle, but usually bulk complete means "mark all as complete"
-    // Since we don't have a specific "mark Complete" we will just toggle them.
-    // Ideally we should just set to complete. But for now we toggle.
     for (var id in ids) {
-      await _todoRepo.toggleCompleted(id);
+      await _todoRepo.setCompleted(id, true);
     }
     _loadTodos();
   }
@@ -104,7 +102,8 @@ class _TasksScreenState extends State<TasksScreen> {
   Future<void> _handleDelete(TodoWithContact item) async {
     final todoItem = item.todo;
     await _todoRepo.delete(todoItem.id);
-    
+    if (!mounted) return;
+
     // Optimistic UI update
     setState(() {
       _todos.removeWhere((t) => t.id == todoItem.id);

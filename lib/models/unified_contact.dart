@@ -41,8 +41,10 @@ class UnifiedContact {
   int get hashCode => id.hashCode;
 
   String get initials {
-    if (name.isEmpty) return '?';
-    final parts = name.split(' ').where((s) => s.isNotEmpty).toList();
+    // Split on any whitespace and drop empty parts: "John ", "  Ann" or
+    // "John  Smith" would otherwise index an empty string and crash.
+    final parts = name.trim().split(RegExp(r'\s+')).where((s) => s.isNotEmpty).toList();
+    if (parts.isEmpty) return '?';
     if (parts.length > 1) {
       return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
     }

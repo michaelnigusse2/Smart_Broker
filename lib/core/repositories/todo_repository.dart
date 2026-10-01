@@ -122,6 +122,22 @@ class TodoRepository {
     }
   }
 
+  /// Sets a task's completion explicitly (used by bulk actions).
+  Future<void> setCompleted(String id, bool completed) async {
+    final db = await _db.database;
+    final maps = await db.query('todos', where: 'id = ?', whereArgs: [id]);
+    if (maps.isEmpty) return;
+    final todo = TodoItem.fromMap(maps.first);
+    if (todo.isCompleted == completed) return;
+    final updated = todo.copyWith(
+      isCompleted: completed,
+      completedAt: completed ? DateTime.now() : null,
+      clearCompletedAt: !completed,
+    );
+    await db.update('todos', updated.toMap(), where: 'id = ?', whereArgs: [id]);
+    await _updateContactTasksCount(db, todo.contactId);
+  }
+
   Future<void> toggleCompleted(String id) async {
     final db = await _db.database;
     final maps = await db.query('todos', where: 'id = ?', whereArgs: [id]);

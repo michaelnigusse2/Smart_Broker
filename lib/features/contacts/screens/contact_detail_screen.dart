@@ -713,9 +713,9 @@ class _CallsList extends StatelessWidget {
                 SizedBox(
                   width: 50,
                   child: Text(
-                    call.duration.inSeconds > 0 
+                    call.duration.inMinutes > 0
                       ? '${call.duration.inMinutes}m'
-                      : '0s',
+                      : '${call.duration.inSeconds}s',
                     style: theme.textTheme.labelMedium,
                     textAlign: TextAlign.end,
                   ),

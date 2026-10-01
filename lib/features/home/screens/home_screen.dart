@@ -41,7 +41,8 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final contacts = await _contactRepo.getAll();
       final todos = await _todoRepo.getPending();
-      final reminders = await _reminderRepo.getUpcoming();
+      // Include overdue reminders so they don't silently disappear.
+      final reminders = await _reminderRepo.getOpen();
 
       if (mounted) {
         setState(() {

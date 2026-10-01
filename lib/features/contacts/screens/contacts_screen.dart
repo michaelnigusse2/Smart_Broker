@@ -55,12 +55,8 @@ class _ContactsScreenState extends State<ContactsScreen> {
   Future<void> _loadData() async {
     try {
       final contacts = await _mergeService.getUnifiedContacts();
-      final overdueReminders = await _reminderRepo.getUpcoming();
-      
-      final overdueIds = overdueReminders
-          .where((r) => r.dateTime.isBefore(DateTime.now()))
-          .map((r) => r.contactId)
-          .toSet();
+      final overdueReminders = await _reminderRepo.getOverdue();
+      final overdueIds = overdueReminders.map((r) => r.contactId).toSet();
 
       if (mounted) {
         setState(() {

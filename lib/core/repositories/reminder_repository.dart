@@ -49,6 +49,29 @@ class ReminderRepository {
     return maps.map((m) => Reminder.fromMap(m)).toList();
   }
 
+  /// Incomplete reminders whose time has passed.
+  Future<List<Reminder>> getOverdue() async {
+    final db = await _db.database;
+    final maps = await db.query(
+      'reminders',
+      where: 'completed = 0 AND dateTime < ?',
+      whereArgs: [DateTime.now().millisecondsSinceEpoch],
+      orderBy: 'dateTime ASC',
+    );
+    return maps.map((m) => Reminder.fromMap(m)).toList();
+  }
+
+  /// All incomplete reminders, overdue ones first.
+  Future<List<Reminder>> getOpen() async {
+    final db = await _db.database;
+    final maps = await db.query(
+      'reminders',
+      where: 'completed = 0',
+      orderBy: 'dateTime ASC',
+    );
+    return maps.map((m) => Reminder.fromMap(m)).toList();
+  }
+
   Future<String> insert(Reminder reminder) async {
     final db = await _db.database;
     final id = reminder.id.isEmpty ? _uuid.v4() : reminder.id;
