@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
@@ -8,6 +9,8 @@ import '../repositories/reminder_repository.dart';
 import '../../models/contact.dart';
 import '../../models/call_entry.dart';
 import '../constants/app_routes.dart';
+import 'call_overlay_state.dart';
+import '../utils/reminder_time.dart';
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
@@ -19,14 +22,26 @@ class NotificationService {
 
   bool _initialized = false;
 
+  /// True when the device's timezone wasn't recognised and UTC is used instead.
+  /// Reminders still fire at the right moment (they're scheduled as absolute
+  /// instants); only wall-clock-based schedules would be affected.
+  bool timezoneFallback = false;
+
   Future<void> init() async {
     if (_initialized) return;
 
     // 1. Initialize Timezones
     tz.initializeTimeZones();
     // flutter_timezone 5.x returns TimezoneInfo — use .identifier for the IANA name
-    final timezoneInfo = await FlutterTimezone.getLocalTimezone();
-    tz.setLocalLocation(tz.getLocation(timezoneInfo.identifier));
+    try {
+      final timezoneInfo = await FlutterTimezone.getLocalTimezone();
+      tz.setLocalLocation(tz.getLocation(timezoneInfo.identifier));
+    } catch (e) {
+      // Some ROMs report identifiers missing from the bundled tz database.
+      debugPrint('NotificationService: unknown timezone, using UTC ($e)');
+      tz.setLocalLocation(tz.UTC);
+      timezoneFallback = true;
+    }
 
     // 2. Android settings
     const androidSettings =
@@ -55,18 +70,28 @@ class NotificationService {
               AndroidFlutterLocalNotificationsPlugin>()
           ?.requestNotificationsPermission();
 
-      // Request exact alarm permission for Android 12+
-      await _plugin
-          .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>()
-          ?.requestExactAlarmsPermission();
+      // Exact alarm permission (Android 12+). Only ask when it isn't granted —
+      // asking opens a system settings page every time.
+      final android = _plugin.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+      if (android != null && !(await android.canScheduleExactNotifications() ?? false)) {
+        await android.requestExactAlarmsPermission();
+      }
     }
 
     _initialized = true;
   }
 
-  void _onResponse(NotificationResponse response) {
+  Future<void> _onResponse(NotificationResponse response) async {
     if (response.payload != null && response.payload!.startsWith('/add-note')) {
+      // A note already written in the call overlay goes straight to AI Review.
+      final pending = await CallOverlayState.takePendingReview();
+      if (pending != null) {
+        AppRoutes.globalNavigatorKey.currentState?.pushNamed(AppRoutes.aiReview, arguments: pending);
+        return;
+      }
+      if (CallOverlayState.tookRecently) return; // AI Review was just opened on resume.
+
       final uri = Uri.parse(response.payload!);
       final contactId = uri.queryParameters['contactId'];
       final duration = uri.queryParameters['duration'];
@@ -103,7 +128,7 @@ class NotificationService {
     final durationStr = '${call.duration.inMinutes}m ${call.duration.inSeconds % 60}s';
 
     await _plugin.show(
-      id: call.id.hashCode.abs(),
+      id: stableNotificationId('call:${call.id}'),
       title: 'Call with ${contact.name}',
       body: 'Tap to add a note about this call ($durationStr)',
       notificationDetails: notificationDetails,
@@ -112,13 +137,14 @@ class NotificationService {
   }
 
   /// Schedules a local notification for an upcoming, incomplete reminder.
-  Future<void> scheduleReminder(Reminder reminder) async {
-    if (reminder.completed || reminder.dateTime.isBefore(DateTime.now())) {
-      return;
+  /// Returns false when nothing was scheduled (completed, in the past, or the
+  /// OS refused).
+  Future<bool> scheduleReminder(Reminder reminder) async {
+    if (reminder.completed || !isSchedulable(reminder.dateTime)) {
+      return false;
     }
 
-    // Derive a stable integer ID from the UUID string
-    final int notificationId = reminder.id.hashCode.abs();
+    final int notificationId = stableNotificationId(reminder.id);
 
     const notificationDetails = NotificationDetails(
       android: AndroidNotificationDetails(
@@ -148,27 +174,41 @@ class NotificationService {
             : 'You have an upcoming reminder.',
         scheduledDate: scheduledDate,
         notificationDetails: notificationDetails,
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        androidScheduleMode: await _scheduleMode(),
       );
+      return true;
     } catch (e) {
-      // If exact alarm permission was denied, silently skip
-      // ignore: avoid_print
-      print('NotificationService: failed to schedule alarm: $e');
+      debugPrint('NotificationService: failed to schedule reminder: $e');
+      return false;
     }
+  }
+
+  /// Exact timing when allowed; otherwise inexact (may fire a few minutes late)
+  /// rather than failing silently.
+  Future<AndroidScheduleMode> _scheduleMode() async {
+    if (!Platform.isAndroid) return AndroidScheduleMode.exactAllowWhileIdle;
+    final android = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    final exact = await android?.canScheduleExactNotifications() ?? false;
+    return exact ? AndroidScheduleMode.exactAllowWhileIdle : AndroidScheduleMode.inexactAllowWhileIdle;
   }
 
   /// Cancels a previously scheduled notification by reminder ID.
   Future<void> cancelReminder(String reminderId) async {
-    // v20+ cancel() uses named param `id`
-    await _plugin.cancel(id: reminderId.hashCode.abs());
+    // v20+ cancel() uses named param `id`. Also cancel the id older builds
+    // used, so alarms scheduled before the id change can't linger.
+    await _plugin.cancel(id: stableNotificationId(reminderId));
+    await _plugin.cancel(id: legacyNotificationId(reminderId));
   }
 
-  /// Cancels all pending notifications and reschedules from the DB.
+  /// Re-creates reminder alarms from the database.
+  ///
+  /// Only reminder notifications are touched — a post-call prompt that is
+  /// still in the notification shade must survive the app being opened.
   Future<void> rescheduleAll() async {
-    await _plugin.cancelAll();
-
-    final upcoming = await ReminderRepository().getUpcoming();
-    for (final reminder in upcoming) {
+    final reminders = await ReminderRepository().getAll();
+    for (final reminder in reminders) {
+      await cancelReminder(reminder.id);
       await scheduleReminder(reminder);
     }
   }

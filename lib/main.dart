@@ -1,53 +1,163 @@
+import 'dart:async';
+import 'dart:io' show Platform;
+import 'dart:ui' show PlatformDispatcher;
+
 import 'package:flutter/material.dart';
-import 'core/theme/app_theme.dart';
+import 'package:flutter_overlay_window/flutter_overlay_window.dart';
+
 import 'core/constants/app_routes.dart';
-import 'features/home/screens/main_shell.dart';
+import 'core/database/seed_data.dart';
+import 'core/services/call_detection_service.dart';
+import 'core/services/call_matching_service.dart';
+import 'core/services/call_overlay_state.dart';
+import 'core/services/notification_service.dart';
+import 'core/services/settings_service.dart';
+import 'core/theme/app_theme.dart';
+import 'features/calendar/screens/reminder_detail_screen.dart';
+import 'features/calls/screens/call_overlay_screen.dart';
 import 'features/contacts/screens/contact_detail_screen.dart';
 import 'features/contacts/screens/phone_contact_detail_screen.dart';
+import 'features/home/screens/main_shell.dart';
+import 'features/home/screens/startup_error_screen.dart';
 import 'features/notes/screens/add_note_screen.dart';
 import 'features/notes/screens/ai_review_screen.dart';
 import 'features/notes/screens/note_detail_screen.dart';
 import 'features/notes/screens/notes_list_screen.dart';
-
-import 'features/calendar/screens/reminder_detail_screen.dart';
-
-import 'core/database/seed_data.dart';
-import 'core/services/notification_service.dart';
-
+import 'features/settings/screens/settings_screen.dart';
 import 'features/todos/screens/tasks_screen.dart';
-import 'package:flutter_overlay_window/flutter_overlay_window.dart';
-import 'dart:convert';
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await SeedData.seedIfNeeded();
-  // Initialize and reschedule all upcoming reminder notifications
-  await NotificationService().init();
-  await NotificationService().rescheduleAll();
+void main() {
+  runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+    FlutterError.onError = (details) {
+      FlutterError.presentError(details);
+      debugPrint('FlutterError: ${details.exceptionAsString()}');
+    };
+    PlatformDispatcher.instance.onError = (error, stack) {
+      debugPrint('Uncaught platform error: $error\n$stack');
+      return true;
+    };
+    await _startApp();
+  }, (error, stack) => debugPrint('Uncaught zone error: $error\n$stack'));
+}
 
-  FlutterOverlayWindow.overlayListener.listen((event) {
-    if (event == null) return;
-    try {
-      final data = jsonDecode(event.toString());
-      if (data['action'] == 'openAiReview') {
-        AppRoutes.globalNavigatorKey.currentState?.pushNamed(
-          AppRoutes.aiReview,
-          arguments: {
-            'contactId': data['contactId'],
-            'rawText': data['noteText'],
-          },
-        );
-      }
-    } catch (e) {
-      debugPrint('Error parsing overlay event in main: $e');
-    }
-  });
-
+/// Runs startup and shows the app, or an error screen if the database can't
+/// be opened. Called again by the error screen's "Try again".
+Future<void> _startApp() async {
+  final failure = await _initialise();
+  if (failure != null) {
+    runApp(StartupErrorApp(error: failure, onRetry: _startApp));
+    return;
+  }
   runApp(const SmartBrokerApp());
 }
 
-class SmartBrokerApp extends StatelessWidget {
+/// Returns the error if a fatal step failed; non-fatal steps are logged and
+/// skipped so a notification or call-detection problem never blocks the app.
+Future<Object?> _initialise() async {
+  try {
+    await SeedData.seedIfNeeded(); // Opens the database.
+  } catch (e, st) {
+    debugPrint('Startup: database unavailable: $e\n$st');
+    return e;
+  }
+  await _nonFatal('notifications', () => NotificationService().init());
+  await _nonFatal('reminder rescheduling', () => NotificationService().rescheduleAll());
+  _listenToOverlayOnce();
+  await _restoreCallDetection();
+  return null;
+}
+
+Future<void> _nonFatal(String step, Future<void> Function() action) async {
+  try {
+    await action();
+  } catch (e, st) {
+    debugPrint('Startup: $step failed, continuing: $e\n$st');
+  }
+}
+
+bool _overlayListenerAttached = false;
+
+/// Messages from the call overlay (best effort — see CallOverlayState).
+/// The plugin's stream can only be listened to once per isolate.
+void _listenToOverlayOnce() {
+  if (_overlayListenerAttached) return;
+  _overlayListenerAttached = true;
+  try {
+    FlutterOverlayWindow.overlayListener.listen((event) {
+      if (event is Map && event['action'] == 'openAiReview') {
+        openPendingAiReview();
+      }
+    });
+  } catch (e) {
+    debugPrint('Startup: overlay listener unavailable: $e');
+  }
+}
+
+/// Entry point for the call overlay window. flutter_overlay_window looks this
+/// function up by name in the app's main library, so it must live in this file.
+@pragma('vm:entry-point')
+void overlayMain() {
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(MaterialApp(
+    debugShowCheckedModeBanner: false,
+    theme: AppTheme.lightTheme,
+    home: const CallOverlayScreen(),
+  ));
+}
+
+/// Restarts call detection on launch if the user had turned it on.
+Future<void> _restoreCallDetection() async {
+  if (!Platform.isAndroid) return;
+  try {
+    // A leftover overlay state from a previous session would confuse the overlay.
+    await CallOverlayState.clear();
+    if (!await SettingsService().getCallDetectionEnabled()) return;
+    final detection = CallDetectionService();
+    if (!await detection.isPermissionGranted()) return;
+    if (await detection.start()) {
+      CallMatchingService().startListening();
+    }
+  } catch (e) {
+    debugPrint('Could not restore call detection: $e');
+  }
+}
+
+/// Opens AI Review for a note saved from the call overlay, if there is one.
+Future<void> openPendingAiReview() async {
+  final pending = await CallOverlayState.takePendingReview();
+  if (pending == null) return;
+  AppRoutes.globalNavigatorKey.currentState?.pushNamed(
+    AppRoutes.aiReview,
+    arguments: pending,
+  );
+}
+
+class SmartBrokerApp extends StatefulWidget {
   const SmartBrokerApp({super.key});
+
+  @override
+  State<SmartBrokerApp> createState() => _SmartBrokerAppState();
+}
+
+class _SmartBrokerAppState extends State<SmartBrokerApp> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) => openPendingAiReview());
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) openPendingAiReview();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -67,6 +177,7 @@ class SmartBrokerApp extends StatelessWidget {
         AppRoutes.addNote: (context) => const AddNoteScreen(),
         AppRoutes.aiReview: (context) => const AiReviewScreen(),
         AppRoutes.reminderDetail: (context) => const ReminderDetailScreen(),
+        AppRoutes.settings: (context) => const SettingsScreen(),
       },
     );
   }

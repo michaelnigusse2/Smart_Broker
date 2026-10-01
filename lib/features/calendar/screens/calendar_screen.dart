@@ -8,6 +8,8 @@ import '../../../core/repositories/reminder_repository.dart';
 import '../../../core/repositories/contact_repository.dart';
 import '../../../core/constants/app_routes.dart';
 import '../../../core/services/notification_service.dart';
+import '../../../core/utils/reminder_time.dart';
+import '../../../core/widgets/past_reminder_dialog.dart';
 import '../../../models/reminder.dart';
 import '../../../models/contact.dart';
 
@@ -353,7 +355,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
       );
       return;
     }
-    
+
+    final messenger = ScaffoldMessenger.of(context);
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -368,7 +371,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
             final id = await _reminderRepo.insert(reminder);
             // Schedule a notification for the new reminder
             final saved = await _reminderRepo.getById(id);
-            if (saved != null) await NotificationService().scheduleReminder(saved);
+            final scheduled = saved != null && await NotificationService().scheduleReminder(saved);
+            if (!scheduled) {
+              messenger.showSnackBar(const SnackBar(
+                content: Text('Reminder saved — no notification (the time has passed)'),
+              ));
+            }
             _loadData();
           },
         );
@@ -402,9 +410,44 @@ class _AddReminderSheetState extends State<_AddReminderSheet> {
   void initState() {
     super.initState();
     _selectedDate = widget.initialDate;
+    // For today, default to the next full hour so the reminder can still fire.
+    if (isSameCalendarDay(widget.initialDate, DateTime.now())) {
+      final suggested = nextFullHour();
+      _selectedDate = DateTime(suggested.year, suggested.month, suggested.day);
+      _selectedTime = TimeOfDay.fromDateTime(suggested);
+    }
     if (widget.contacts.isNotEmpty) {
       _selectedContactId = widget.contacts.first.id;
     }
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_titleController.text.trim().isEmpty || _selectedContactId == null) return;
+
+    final finalDateTime = DateTime(
+      _selectedDate.year,
+      _selectedDate.month,
+      _selectedDate.day,
+      _selectedTime.hour,
+      _selectedTime.minute,
+    );
+    if (!isSchedulable(finalDateTime) && !await confirmPastReminder(context)) return;
+    if (!mounted) return;
+
+    widget.onSave(Reminder(
+      id: '',
+      contactId: _selectedContactId!,
+      title: _titleController.text.trim(),
+      dateTime: finalDateTime,
+      createdAt: DateTime.now(),
+    ));
+    Navigator.pop(context);
   }
 
   @override
@@ -491,26 +534,7 @@ class _AddReminderSheetState extends State<_AddReminderSheet> {
             const SizedBox(height: AppSpacing.xl),
             
             ElevatedButton(
-              onPressed: () {
-                if (_titleController.text.trim().isEmpty || _selectedContactId == null) return;
-                
-                final finalDateTime = DateTime(
-                  _selectedDate.year,
-                  _selectedDate.month,
-                  _selectedDate.day,
-                  _selectedTime.hour,
-                  _selectedTime.minute,
-                );
-                
-                widget.onSave(Reminder(
-                  id: '',
-                  contactId: _selectedContactId!,
-                  title: _titleController.text.trim(),
-                  dateTime: finalDateTime,
-                  createdAt: DateTime.now(),
-                ));
-                Navigator.pop(context);
-              },
+              onPressed: _save,
               child: const Text('Save Reminder'),
             ),
             const SizedBox(height: AppSpacing.md),

@@ -8,6 +8,8 @@ import '../../../core/repositories/note_repository.dart';
 import '../../../core/widgets/constrained_layout.dart';
 import '../../../core/constants/app_routes.dart';
 import '../../../core/services/notification_service.dart';
+import '../../../core/utils/reminder_time.dart';
+import '../../../core/widgets/past_reminder_dialog.dart';
 import '../../../models/reminder.dart';
 import '../../../models/contact.dart';
 import '../../../models/note.dart';
@@ -113,6 +115,9 @@ class _ReminderDetailScreenState extends State<ReminderDetailScreen> {
 
   Future<void> _saveChanges() async {
     if (_titleController.text.trim().isEmpty) return;
+    final when = _editedDateTime ?? _reminder!.dateTime;
+    if (!_reminder!.completed && !isSchedulable(when) && !await confirmPastReminder(context)) return;
+    if (!mounted) return;
 
     final updated = _reminder!.copyWith(
       title: _titleController.text.trim(),
@@ -124,6 +129,7 @@ class _ReminderDetailScreenState extends State<ReminderDetailScreen> {
     // Reschedule notification (date/time may have changed)
     await NotificationService().cancelReminder(updated.id);
     await NotificationService().scheduleReminder(updated);
+    if (!mounted) return;
     _cancelEditMode();
     _loadData(); // reload fresh data
   }

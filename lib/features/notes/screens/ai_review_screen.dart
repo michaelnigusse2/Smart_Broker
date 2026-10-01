@@ -13,8 +13,11 @@ import '../../../core/repositories/note_repository.dart';
 import '../../../core/repositories/todo_repository.dart';
 import '../../../core/repositories/reminder_repository.dart';
 import '../../../core/repositories/contact_repository.dart';
-import '../../../core/services/api_key_service.dart';
 import '../../../core/services/ai_service.dart';
+import '../../../core/services/notification_service.dart';
+import '../../../core/services/overlay_draft_service.dart';
+import '../../../core/utils/reminder_time.dart';
+import '../../../core/widgets/past_reminder_dialog.dart';
 import '../../../core/constants/app_routes.dart';
 
 class AiReviewScreen extends StatefulWidget {
@@ -38,6 +41,7 @@ class _AiReviewScreenState extends State<AiReviewScreen> {
   late final TextEditingController _summaryController;
   final List<TextEditingController> _taskControllers = [];
   bool _includeReminder = true;
+  final TextEditingController _reminderTitleController = TextEditingController();
   DateTime _reminderDateTime = DateTime.now().add(const Duration(days: 1));
   
   bool _initialized = false;
@@ -82,16 +86,16 @@ class _AiReviewScreenState extends State<AiReviewScreen> {
   }
 
   Future<void> _checkApiKeyAndAnalyze() async {
-    final key = await ApiKeyService().getKey();
-    if (key == null || key.isEmpty) {
+    final aiService = await AiService.fromSettings();
+    if (aiService == null) {
       if (!mounted) return;
       _showNoKeyDialog();
       return;
     }
-    _analyzeNote(key);
+    _analyzeNote(aiService);
   }
 
-  Future<void> _analyzeNote(String apiKey) async {
+  Future<void> _analyzeNote(AiService aiService) async {
     if (!mounted) return;
     setState(() {
       _isProcessing = true;
@@ -115,7 +119,6 @@ class _AiReviewScreenState extends State<AiReviewScreen> {
       final pendingTodosList = await _todoRepo.getByContactId(_contactId!);
       final pendingTodos = pendingTodosList.where((t) => !t.isCompleted).map((t) => t.title).join('\n');
 
-      final aiService = AiService(apiKey: apiKey);
       final result = await aiService.analyzeNote(
         contactName: contactName,
         rawNote: _rawText!,
@@ -132,6 +135,7 @@ class _AiReviewScreenState extends State<AiReviewScreen> {
           _taskControllers.add(TextEditingController(text: item));
         }
         
+        _reminderTitleController.text = result.reminderTitle ?? '';
         if (result.reminderTitle != null) {
           _includeReminder = true;
           if (result.reminderDate != null) {
@@ -160,7 +164,7 @@ class _AiReviewScreenState extends State<AiReviewScreen> {
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         title: const Text('API Key Required'),
-        content: const Text('To use AI Review, you need to configure a Gemini API key in Settings.'),
+        content: const Text('To use AI Review, you need to add a free AI API key (e.g. Groq) in Settings.'),
         actions: [
           TextButton(
             onPressed: () {
@@ -187,6 +191,7 @@ class _AiReviewScreenState extends State<AiReviewScreen> {
   void dispose() {
     _loadingTimer?.cancel();
     _summaryController.dispose();
+    _reminderTitleController.dispose();
     for (final c in _taskControllers) {
       c.dispose();
     }
@@ -218,6 +223,13 @@ class _AiReviewScreenState extends State<AiReviewScreen> {
 
   Future<void> _saveToProfile() async {
     if (_contactId == null || _rawText == null) return;
+    if (_includeReminder && !isSchedulable(_reminderDateTime)) {
+      if (!await confirmPastReminder(context)) {
+        await _pickDateTime();
+        return;
+      }
+      if (!mounted) return;
+    }
 
     // Show summary confirmation
     final confirm = await showDialog<bool>(
@@ -267,6 +279,7 @@ class _AiReviewScreenState extends State<AiReviewScreen> {
         }
         final oldReminders = await _reminderRepo.getByNoteId(finalNoteId);
         for (final r in oldReminders) {
+          await NotificationService().cancelReminder(r.id);
           await _reminderRepo.delete(r.id);
         }
       }
@@ -286,9 +299,12 @@ class _AiReviewScreenState extends State<AiReviewScreen> {
       }
 
       if (_includeReminder) {
-        final title = _summaryController.text.isNotEmpty 
-            ? 'Follow up: ${_summaryController.text.split('.').first}'
-            : 'Follow up reminder';
+        final typedTitle = _reminderTitleController.text.trim();
+        final title = typedTitle.isNotEmpty
+            ? typedTitle
+            : _summaryController.text.isNotEmpty
+                ? 'Follow up: ${_summaryController.text.split('.').first}'
+                : 'Follow up reminder';
         
         final reminder = Reminder(
           id: '',
@@ -298,13 +314,22 @@ class _AiReviewScreenState extends State<AiReviewScreen> {
           dateTime: _reminderDateTime,
           createdAt: DateTime.now(),
         );
-        await _reminderRepo.insert(reminder);
+        final reminderId = await _reminderRepo.insert(reminder);
+        await NotificationService().scheduleReminder(reminder.copyWith(id: reminderId));
       }
 
+      // Mark the contact as recently active and clear any saved call draft.
+      final contact = await _contactRepo.getById(_contactId!);
+      if (contact != null) {
+        await _contactRepo.update(contact.copyWith(lastInteraction: DateTime.now()));
+      }
+      await OverlayDraftService().clearDraft(_contactId!);
+
       if (mounted) {
-        int count = 0;
+        // Return to wherever the note was started from (contact, note, or home).
         Navigator.popUntil(context, (route) {
-          return count++ == 2;
+          final name = route.settings.name;
+          return name != AppRoutes.aiReview && name != AppRoutes.addNote;
         });
       }
     } catch (e) {
@@ -486,7 +511,11 @@ class _AiReviewScreenState extends State<AiReviewScreen> {
                           ),
                           child: ListTile(
                             leading: const Icon(LucideIcons.calendarClock, color: AppColors.primary, size: 20),
-                            title: const Text('Follow up reminder'),
+                            title: TextField(
+                              controller: _reminderTitleController,
+                              decoration: const InputDecoration.collapsed(hintText: 'Reminder title'),
+                              style: Theme.of(context).textTheme.bodyLarge,
+                            ),
                             subtitle: Text(DateFormat.yMMMd().add_jm().format(_reminderDateTime), style: Theme.of(context).textTheme.bodySmall),
                             trailing: Switch(
                               value: _includeReminder,

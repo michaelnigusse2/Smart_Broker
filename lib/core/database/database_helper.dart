@@ -6,6 +6,7 @@ class DatabaseHelper {
   factory DatabaseHelper() => _instance;
   DatabaseHelper._internal();
 
+  static const _fileName = 'smart_broker.db';
   static Database? _database;
 
   Future<Database> get database async {
@@ -16,7 +17,7 @@ class DatabaseHelper {
 
   Future<Database> _initDatabase() async {
     final dbPath = await getDatabasesPath();
-    final path = join(dbPath, 'smart_broker.db');
+    final path = join(dbPath, _fileName);
     return await openDatabase(
       path,
       version: 1,
@@ -111,5 +112,13 @@ class DatabaseHelper {
     final db = await database;
     await db.close();
     _database = null;
+  }
+
+  /// Closes and deletes the local database file. Used by "Reset local data"
+  /// and by tests. The next access to [database] creates a fresh one.
+  static Future<void> deleteLocalDatabase() async {
+    await _database?.close();
+    _database = null;
+    await deleteDatabase(join(await getDatabasesPath(), _fileName));
   }
 }
