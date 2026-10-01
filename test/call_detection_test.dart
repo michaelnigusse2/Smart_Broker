@@ -210,4 +210,27 @@ void main() {
       expect(copy.timestamp, base.timestamp); // unchanged
     });
   });
+
+  // ═══════════════════════════════════════════════════════════════════
+  // PhoneContact.numbersMatch — local vs international formats
+  // ═══════════════════════════════════════════════════════════════════
+  group('PhoneContact.numbersMatch', () {
+    test('matches Ethiopian local and international formats', () {
+      expect(PhoneContact.numbersMatch('0911 23 45 67', '+251 911 234 567'), isTrue);
+      expect(PhoneContact.numbersMatch('251911234567', '0911234567'), isTrue);
+    });
+
+    test('does not match different numbers', () {
+      expect(PhoneContact.numbersMatch('0911234567', '0911234568'), isFalse);
+    });
+
+    test('compares short codes in full', () {
+      expect(PhoneContact.numbersMatch('8294', '8294'), isTrue);
+      expect(PhoneContact.numbersMatch('8294', '994'), isFalse);
+    });
+
+    test('empty numbers never match', () {
+      expect(PhoneContact.numbersMatch('', ''), isFalse);
+    });
+  });
 }

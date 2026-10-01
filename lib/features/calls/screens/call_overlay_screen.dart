@@ -1,14 +1,16 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'package:lucide_icons/lucide_icons.dart';
-import '../../../core/theme/app_theme.dart';
+
+import '../../../core/services/call_overlay_state.dart';
 import '../../../core/services/overlay_draft_service.dart';
+import '../../../core/theme/app_theme.dart';
 
-enum OverlayState { briefing, activeCall, callEnded }
-
+/// The floating window shown during calls. Runs in its own Flutter engine
+/// (entry point `overlayMain` in main.dart) and talks to the app through
+/// [CallOverlayState].
 class CallOverlayScreen extends StatefulWidget {
   const CallOverlayScreen({super.key});
 
@@ -17,65 +19,90 @@ class CallOverlayScreen extends StatefulWidget {
 }
 
 class _CallOverlayScreenState extends State<CallOverlayScreen> {
-  OverlayState _state = OverlayState.briefing;
-  String _contactName = 'Unknown';
-  String _contactId = '';
+  static const _unknownDraftKey = 'unknown_caller';
+
+  String _phase = '';
+  String? _contactId;
+  String _title = 'Current call';
   List<String> _pendingTasks = [];
   String _lastNoteSummary = '';
-  
+  int? _startedAt;
+  int? _endedAt;
+
   final _noteController = TextEditingController();
   final _draftService = OverlayDraftService();
+  StreamSubscription<dynamic>? _messages;
+  Timer? _pollTimer;
+  Timer? _clockTimer;
   Timer? _debounceTimer;
-  Timer? _callDurationTimer;
-  int _callSeconds = 0;
   bool _showSavedIndicator = false;
+  bool _submitted = false;
 
   @override
   void initState() {
     super.initState();
-    FlutterOverlayWindow.overlayListener.listen((event) {
-      if (event == null) return;
-      try {
-        final Map<String, dynamic> data = jsonDecode(event.toString());
-        
-        if (data['action'] == 'init') {
-          setState(() {
-            _contactName = data['contactName'] ?? 'Unknown';
-            _contactId = data['contactId'] ?? '';
-            _pendingTasks = List<String>.from(data['pendingTasks'] ?? []);
-            _lastNoteSummary = data['lastNoteSummary'] ?? '';
-          });
-        } else if (data['action'] == 'active') {
-          setState(() => _state = OverlayState.activeCall);
-          _startTimer();
-        } else if (data['action'] == 'ended') {
-          setState(() => _state = OverlayState.callEnded);
-          _stopTimer();
-        }
-      } catch (e) {
-        debugPrint('Overlay JSON parse error: $e');
+    // The app pings us whenever the call state changes…
+    _messages = FlutterOverlayWindow.overlayListener.listen((_) => _refresh());
+    // …and we poll as a fallback while a call is on screen.
+    _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      if (_phase.isNotEmpty) _refresh();
+    });
+    _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted && _phase == 'active') setState(() {});
+    });
+    _refresh();
+  }
+
+  Future<void> _refresh() async {
+    final state = await CallOverlayState.read();
+    if (!mounted) return;
+    if (state == null) {
+      if (_phase.isNotEmpty) setState(() => _phase = '');
+      return;
+    }
+    final phase = state['phase'] as String? ?? '';
+    final contactId = state['contactId'] as String?;
+    final isNewCall = (phase == 'ringing' && _phase != 'ringing') || (_phase.isEmpty && phase.isNotEmpty);
+
+    if (isNewCall) {
+      _submitted = false;
+      _noteController.clear();
+    }
+
+    // Once we know who the call is with, move any text typed so far to that
+    // contact's draft (and restore an existing draft if the field is empty).
+    if (contactId != null && contactId != _contactId) {
+      final existing = await _draftService.loadDraft(contactId);
+      if (_noteController.text.trim().isEmpty && existing != null) {
+        _noteController.text = existing;
+      } else if (_noteController.text.trim().isNotEmpty) {
+        await _draftService.saveDraft(contactId, _noteController.text);
       }
+    }
+    if (!mounted) return;
+
+    setState(() {
+      _phase = phase;
+      _contactId = contactId;
+      final name = state['contactName'] as String?;
+      final number = state['number'] as String?;
+      _title = (name != null && name.isNotEmpty)
+          ? name
+          : (number != null && number.isNotEmpty ? number : 'Current call');
+      _pendingTasks = List<String>.from(state['pendingTasks'] as List? ?? const []);
+      _lastNoteSummary = state['lastNoteSummary'] as String? ?? '';
+      _startedAt = state['startedAt'] as int?;
+      _endedAt = state['endedAt'] as int?;
     });
   }
 
-  void _startTimer() {
-    _callDurationTimer?.cancel();
-    _callSeconds = 0;
-    _callDurationTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      setState(() => _callSeconds++);
-    });
-  }
-
-  void _stopTimer() {
-    _callDurationTimer?.cancel();
-  }
+  String get _draftKey => _contactId ?? _unknownDraftKey;
 
   void _onTextChanged(String text) {
-    if (_contactId.isEmpty) return;
-    
-    if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
+    _debounceTimer?.cancel();
     _debounceTimer = Timer(const Duration(seconds: 2), () async {
-      await _draftService.saveDraft(_contactId, text);
+      await _draftService.saveDraft(_draftKey, text);
+      if (!mounted) return;
       setState(() => _showSavedIndicator = true);
       Future.delayed(const Duration(seconds: 2), () {
         if (mounted) setState(() => _showSavedIndicator = false);
@@ -84,32 +111,43 @@ class _CallOverlayScreenState extends State<CallOverlayScreen> {
   }
 
   Future<void> _handleSaveAndProcess() async {
-    if (_contactId.isEmpty) return;
     final text = _noteController.text.trim();
-    if (text.isNotEmpty) {
-      await _draftService.saveDraft(_contactId, text);
-      await FlutterOverlayWindow.shareData(jsonEncode({
+    if (text.isEmpty) return;
+    await _draftService.saveDraft(_draftKey, text);
+    await CallOverlayState.setPendingReview(contactId: _contactId, text: text);
+    // Best effort: if the app is listening it opens AI Review straight away.
+    try {
+      await FlutterOverlayWindow.shareData({
         'action': 'openAiReview',
         'contactId': _contactId,
         'noteText': text,
-      }));
-    }
-    await FlutterOverlayWindow.closeOverlay();
+      });
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() => _submitted = true);
+    await Future.delayed(const Duration(milliseconds: 1800));
+    await _close();
   }
 
   Future<void> _handleDismiss() async {
     final text = _noteController.text.trim();
-    if (_contactId.isNotEmpty && text.isNotEmpty) {
-      await _draftService.saveDraft(_contactId, text);
-    }
+    if (text.isNotEmpty) await _draftService.saveDraft(_draftKey, text);
+    await _close();
+  }
+
+  Future<void> _close() async {
+    await CallOverlayState.clear();
+    if (mounted) setState(() => _phase = '');
     await FlutterOverlayWindow.closeOverlay();
   }
 
   @override
   void dispose() {
-    _noteController.dispose();
+    _messages?.cancel();
+    _pollTimer?.cancel();
+    _clockTimer?.cancel();
     _debounceTimer?.cancel();
-    _stopTimer();
+    _noteController.dispose();
     super.dispose();
   }
 
@@ -119,37 +157,35 @@ class _CallOverlayScreenState extends State<CallOverlayScreen> {
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
+  int get _elapsedSeconds {
+    if (_startedAt == null) return 0;
+    final end = _endedAt ?? DateTime.now().millisecondsSinceEpoch;
+    final seconds = (end - _startedAt!) ~/ 1000;
+    return seconds < 0 ? 0 : seconds;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: Center(
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(AppRadius.lg),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: Container(
-              width: MediaQuery.of(context).size.width * 0.9,
-              constraints: const BoxConstraints(maxHeight: 400),
-              decoration: BoxDecoration(
-                color: AppColors.surface.withValues(alpha: 0.9),
-                borderRadius: BorderRadius.circular(AppRadius.lg),
-                border: Border.all(color: AppColors.divider.withValues(alpha: 0.5)),
-                boxShadow: [
-                  BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 10, spreadRadius: 1)
-                ]
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _buildHeader(),
-                  const Divider(height: 1),
-                  Flexible(child: _buildContent()),
-                  const Divider(height: 1),
-                  _buildFooter(),
-                ],
-              ),
+      resizeToAvoidBottomInset: false,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.sm),
+          child: Material(
+            color: AppColors.surface,
+            elevation: 8,
+            borderRadius: BorderRadius.circular(AppRadius.lg),
+            clipBehavior: Clip.antiAlias,
+            child: _submitted ? _buildSubmitted() : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildHeader(),
+                const Divider(height: 1),
+                Expanded(child: _buildContent()),
+                const Divider(height: 1),
+                _buildFooter(),
+              ],
             ),
           ),
         ),
@@ -157,19 +193,37 @@ class _CallOverlayScreenState extends State<CallOverlayScreen> {
     );
   }
 
-  Widget _buildHeader() {
-    Color iconColor = AppColors.textSecondary;
-    String titleText = _contactName;
-    String subtitleText = 'Incoming call...';
+  Widget _buildSubmitted() {
+    return const Center(
+      child: Padding(
+        padding: EdgeInsets.all(AppSpacing.xl),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(LucideIcons.checkCircle, color: AppColors.success, size: 36),
+            SizedBox(height: AppSpacing.md),
+            Text('Note saved', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            SizedBox(height: AppSpacing.xs),
+            Text(
+              'Open SmartBroker to review it with AI.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
-    if (_state == OverlayState.activeCall) {
+  Widget _buildHeader() {
+    Color iconColor = AppColors.primary;
+    String subtitle = 'Incoming call…';
+    if (_phase == 'active') {
       iconColor = AppColors.success;
-      titleText = _contactName;
-      subtitleText = 'Active call — ${_formatDuration(_callSeconds)}';
-    } else if (_state == OverlayState.callEnded) {
+      subtitle = 'On call — ${_formatDuration(_elapsedSeconds)}';
+    } else if (_phase == 'ended') {
       iconColor = AppColors.error;
-      titleText = 'Call Ended';
-      subtitleText = 'Duration: ${_formatDuration(_callSeconds)}';
+      subtitle = 'Call ended — ${_formatDuration(_elapsedSeconds)}';
     }
 
     return Padding(
@@ -183,8 +237,11 @@ class _CallOverlayScreenState extends State<CallOverlayScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(titleText, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                Text(subtitleText, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                Text(_title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                Text(subtitle, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
               ],
             ),
           ),
@@ -195,88 +252,69 @@ class _CallOverlayScreenState extends State<CallOverlayScreen> {
     );
   }
 
-  Widget _buildContent() {
-    if (_state == OverlayState.briefing) {
-      return ListView(
-        shrinkWrap: true,
-        padding: const EdgeInsets.all(AppSpacing.md),
-        children: [
-          const Text('Pending Tasks', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.textSecondary)),
+  Widget _buildBriefing() {
+    return ListView(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      children: [
+        if (_contactId == null)
+          const Text('Not a saved contact yet.',
+              style: TextStyle(fontStyle: FontStyle.italic, color: AppColors.textTertiary))
+        else ...[
+          const Text('Pending tasks',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.textSecondary)),
           const SizedBox(height: AppSpacing.xs),
           if (_pendingTasks.isEmpty)
-            const Text('No pending tasks', style: TextStyle(fontStyle: FontStyle.italic, color: AppColors.textTertiary))
+            const Text('No pending tasks',
+                style: TextStyle(fontStyle: FontStyle.italic, color: AppColors.textTertiary))
           else
             ..._pendingTasks.map((t) => Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Icon(LucideIcons.square, size: 14, color: AppColors.textTertiary),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(child: Text(t, style: const TextStyle(fontSize: 14))),
-                ],
-              ),
-            )),
-            
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(LucideIcons.square, size: 14, color: AppColors.textTertiary),
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(child: Text(t, style: const TextStyle(fontSize: 14))),
+                    ],
+                  ),
+                )),
           const SizedBox(height: AppSpacing.lg),
-          const Text('Last Note Summary', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.textSecondary)),
+          const Text('Last note',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.textSecondary)),
           const SizedBox(height: AppSpacing.xs),
-          Container(
-            padding: const EdgeInsets.all(AppSpacing.sm),
-            decoration: BoxDecoration(color: AppColors.surfaceElevated, borderRadius: BorderRadius.circular(AppRadius.sm)),
-            child: Text(
-              _lastNoteSummary.isEmpty ? 'No previous notes' : _lastNoteSummary,
-              style: TextStyle(
-                fontSize: 14, 
-                fontStyle: _lastNoteSummary.isEmpty ? FontStyle.italic : FontStyle.normal,
-                color: _lastNoteSummary.isEmpty ? AppColors.textTertiary : AppColors.textPrimary
-              ),
+          Text(
+            _lastNoteSummary.isEmpty ? 'No previous notes' : _lastNoteSummary,
+            style: TextStyle(
+              fontSize: 14,
+              color: _lastNoteSummary.isEmpty ? AppColors.textTertiary : AppColors.textPrimary,
             ),
           ),
         ],
-      );
-    } else {
-      return Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (_state == OverlayState.callEnded)
-              Container(
-                margin: const EdgeInsets.only(bottom: AppSpacing.md),
-                padding: const EdgeInsets.all(AppSpacing.xs),
-                color: AppColors.error.withValues(alpha: 0.1),
-                child: const Row(
-                  children: [
-                    Icon(LucideIcons.info, size: 14, color: AppColors.error),
-                    SizedBox(width: 4),
-                    Expanded(child: Text('Call ended — finish typing your thoughts.', style: TextStyle(fontSize: 12, color: AppColors.error))),
-                  ],
-                ),
-              ),
-            Flexible(
-              child: TextField(
-                controller: _noteController,
-                maxLines: null,
-                minLines: 3,
-                autofocus: true,
-                onChanged: _onTextChanged,
-                decoration: const InputDecoration(
-                  hintText: 'Start typing notes...',
-                  border: InputBorder.none,
-                ),
-              ),
-            ),
-          ],
+      ],
+    );
+  }
+
+  Widget _buildContent() {
+    if (_phase == 'ringing' || _phase.isEmpty) return _buildBriefing();
+    return Padding(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      child: TextField(
+        controller: _noteController,
+        maxLines: null,
+        expands: true,
+        textAlignVertical: TextAlignVertical.top,
+        onChanged: _onTextChanged,
+        decoration: const InputDecoration(
+          hintText: 'Type notes while you talk…',
+          border: InputBorder.none,
         ),
-      );
-    }
+      ),
+    );
   }
 
   Widget _buildFooter() {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.xs),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
@@ -284,7 +322,7 @@ class _CallOverlayScreenState extends State<CallOverlayScreen> {
             onPressed: _handleDismiss,
             child: const Text('Dismiss', style: TextStyle(color: AppColors.textSecondary)),
           ),
-          if (_state != OverlayState.briefing) ...[
+          if (_phase == 'active' || _phase == 'ended') ...[
             const SizedBox(width: AppSpacing.sm),
             ElevatedButton.icon(
               onPressed: _handleSaveAndProcess,

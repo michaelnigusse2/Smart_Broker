@@ -24,4 +24,19 @@ class PhoneContact {
     final digits = raw.replaceAll(RegExp(r'\D'), '');
     return hasPlus ? '+$digits' : digits;
   }
+
+  /// Key used to decide whether two numbers belong to the same person.
+  ///
+  /// Uses the last 9 digits so local and international formats match —
+  /// e.g. `0911 23 45 67` and `+251 911 234 567` both give `911234567`.
+  /// Shorter numbers (service codes) are compared in full.
+  static String matchKey(String raw) {
+    final digits = raw.replaceAll(RegExp(r'\D'), '');
+    return digits.length > 9 ? digits.substring(digits.length - 9) : digits;
+  }
+
+  static bool numbersMatch(String a, String b) {
+    final ka = matchKey(a);
+    return ka.isNotEmpty && ka == matchKey(b);
+  }
 }

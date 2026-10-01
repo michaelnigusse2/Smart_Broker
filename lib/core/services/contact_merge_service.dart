@@ -27,9 +27,9 @@ class ContactMergeService {
     // 2. Build maps for merging
     final smartContactsByPhone = <String, Contact>{};
     for (var c in smartContacts) {
-      final normalized = PhoneContact.normalizePhoneNumber(c.phoneNumber);
-      if (normalized.isNotEmpty) {
-        smartContactsByPhone[normalized] = c;
+      final key = PhoneContact.matchKey(c.phoneNumber);
+      if (key.isNotEmpty) {
+        smartContactsByPhone[key] = c;
       }
     }
 
@@ -38,9 +38,11 @@ class ContactMergeService {
 
     // 3. Process Phone Contacts
     for (var pc in phoneContacts) {
-      final match = smartContactsByPhone[pc.normalizedNumber];
+      final match = smartContactsByPhone[PhoneContact.matchKey(pc.phoneNumber)];
 
       if (match != null) {
+        // The same person is often saved several times (SIM, Google, WhatsApp).
+        if (processedSmartContactIds.contains(match.id)) continue;
         // Merge! SmartBroker data wins for all fields
         unifiedList.add(UnifiedContact(
           id: match.id,

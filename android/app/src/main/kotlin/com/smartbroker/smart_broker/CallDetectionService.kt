@@ -5,8 +5,10 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Handler
@@ -29,6 +31,11 @@ class CallDetectionService : Service() {
         private const val NOTIFICATION_ID = 9001
         
         var eventSink: ((Map<String, Any>) -> Unit)? = null
+
+        /** True while the service is alive (between onCreate and onDestroy). */
+        @Volatile
+        var isRunning = false
+            private set
     }
 
     private var telephonyManager: TelephonyManager? = null
@@ -41,13 +48,49 @@ class CallDetectionService : Service() {
     private var legacyListener: PhoneStateListener? = null
     private var telephonyCallback: TelephonyCallback? = null
 
+    // Delivers the caller's number for incoming calls (needs READ_CALL_LOG).
+    // TelephonyCallback on Android 12+ no longer passes the number itself.
+    private val phoneStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            @Suppress("DEPRECATION")
+            val number = intent?.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER)
+            if (!number.isNullOrEmpty()) {
+                post(mapOf("event" to "incoming_number", "number" to number))
+            }
+        }
+    }
+    private var receiverRegistered = false
+
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, buildNotification())
+        try {
+            startForeground(NOTIFICATION_ID, buildNotification())
+        } catch (e: Exception) {
+            // e.g. Android 14 refusing the foreground-service type. Don't crash the app.
+            Log.e(TAG, "Could not start foreground service", e)
+            stopSelf()
+            return
+        }
+        isRunning = true
         telephonyManager = getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
         registerListener()
+        try {
+            ContextCompat.registerReceiver(
+                this,
+                phoneStateReceiver,
+                IntentFilter(TelephonyManager.ACTION_PHONE_STATE_CHANGED),
+                ContextCompat.RECEIVER_EXPORTED
+            )
+            receiverRegistered = true
+        } catch (e: Exception) {
+            Log.e(TAG, "Could not register phone state receiver", e)
+        }
         Log.d(TAG, "Service created and listener registered")
+    }
+
+    private fun post(data: Map<String, Any>) {
+        Handler(Looper.getMainLooper()).post { eventSink?.invoke(data) }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -57,7 +100,12 @@ class CallDetectionService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        isRunning = false
         unregisterListener()
+        if (receiverRegistered) {
+            try { unregisterReceiver(phoneStateReceiver) } catch (e: Exception) { Log.w(TAG, "unregisterReceiver failed", e) }
+            receiverRegistered = false
+        }
         Log.d(TAG, "Service destroyed and listener unregistered")
         super.onDestroy()
     }
@@ -87,7 +135,7 @@ class CallDetectionService : Service() {
     private fun registerModernListener() {
         val callback = object : TelephonyCallback(), TelephonyCallback.CallStateListener {
             override fun onCallStateChanged(state: Int) {
-                handleCallState(state)
+                handleCallState(state, null)
             }
         }
         telephonyCallback = callback
@@ -98,23 +146,23 @@ class CallDetectionService : Service() {
     private fun registerLegacyListener() {
         val listener = object : PhoneStateListener() {
             override fun onCallStateChanged(state: Int, phoneNumber: String?) {
-                handleCallState(state)
+                handleCallState(state, phoneNumber)
             }
         }
         legacyListener = listener
         telephonyManager?.listen(listener, PhoneStateListener.LISTEN_CALL_STATE)
     }
 
-    private fun handleCallState(state: Int) {
+    private fun handleCallState(state: Int, phoneNumber: String?) {
         val stateStr = when(state) {
             TelephonyManager.CALL_STATE_RINGING -> "ringing"
             TelephonyManager.CALL_STATE_OFFHOOK -> "offhook"
             TelephonyManager.CALL_STATE_IDLE -> "idle"
             else -> "unknown"
         }
-        Handler(Looper.getMainLooper()).post {
-            eventSink?.invoke(mapOf("event" to "state", "state" to stateStr))
-        }
+        val event = mutableMapOf<String, Any>("event" to "state", "state" to stateStr)
+        if (!phoneNumber.isNullOrEmpty()) event["number"] = phoneNumber
+        post(event)
 
         if (state == TelephonyManager.CALL_STATE_IDLE && lastState != TelephonyManager.CALL_STATE_IDLE) {
             // Call just ended. Wait 1.5 seconds for the system to write to the CallLog

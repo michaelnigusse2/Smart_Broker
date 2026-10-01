@@ -79,8 +79,7 @@ class CallDetectionPlugin : FlutterPlugin, MethodChannel.MethodCallHandler,
             }
 
             "isServiceRunning" -> {
-                // Check if the service is running by examining the event sink
-                result.success(CallDetectionService.eventSink != null)
+                result.success(CallDetectionService.isRunning)
             }
 
             "requestPermission" -> {
@@ -162,8 +161,9 @@ class CallDetectionPlugin : FlutterPlugin, MethodChannel.MethodCallHandler,
         grantResults: IntArray
     ): Boolean {
         if (requestCode == PERMISSION_REQUEST_CODE) {
+            // Both READ_PHONE_STATE and READ_CALL_LOG are needed.
             val granted = grantResults.isNotEmpty() &&
-                    grantResults[0] == PackageManager.PERMISSION_GRANTED
+                    grantResults.all { it == PackageManager.PERMISSION_GRANTED }
             pendingPermissionResult?.success(granted)
             pendingPermissionResult = null
             return true

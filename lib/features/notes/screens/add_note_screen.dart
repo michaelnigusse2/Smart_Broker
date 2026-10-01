@@ -44,7 +44,8 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
   }
 
   Future<void> _loadDraftIfNeeded() async {
-    if (_contactId != null && !_isPostCall && _note == null) {
+    // Restore anything typed in the call overlay (also after a post-call prompt).
+    if (_contactId != null && _note == null) {
       final draft = await _draftService.loadDraft(_contactId!);
       if (draft != null && draft.isNotEmpty && _noteController.text.isEmpty) {
         if (mounted) {

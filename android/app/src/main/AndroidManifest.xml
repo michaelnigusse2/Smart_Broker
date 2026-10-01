@@ -12,7 +12,11 @@
     <uses-permission android:name="android.permission.READ_CALL_LOG" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
+    <!-- Android 14+: the phoneCall service type requires MANAGE_OWN_CALLS (a normal, install-time permission) -->
+    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
+    <!-- Live call overlay (flutter_overlay_window) -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <application
         android:label="smart_broker"
         android:name="${applicationName}"
@@ -57,6 +61,15 @@
             android:name=".CallDetectionService"
             android:foregroundServiceType="phoneCall"
             android:exported="false" />
+        <!-- Live call overlay window (required by flutter_overlay_window; its own manifest doesn't declare it) -->
+        <service
+            android:name="flutter.overlay.window.flutter_overlay_window.OverlayService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Floating note-taking window shown during phone calls" />
+        </service>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
