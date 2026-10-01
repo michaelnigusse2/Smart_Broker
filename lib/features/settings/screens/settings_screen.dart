@@ -5,11 +5,11 @@ import 'dart:io' show Platform;
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/constrained_layout.dart';
 import '../../../core/services/api_key_service.dart';
+import '../../../core/services/ai_provider.dart';
 import '../../../core/services/ai_service.dart';
 import '../../../core/services/call_detection_service.dart';
 import '../../../core/services/call_matching_service.dart';
 import '../../../core/services/settings_service.dart';
-import '../../../models/call_event.dart';
 import '../../../models/call_entry.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -21,6 +21,8 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   final _apiKeyController = TextEditingController();
+  final _modelController = TextEditingController();
+  AiProvider _provider = AiProvider.fallback;
   bool _isObscured = true;
   bool _isChecking = false;
   bool _hasKey = false;
@@ -47,19 +49,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _loadKey() async {
-    final key = await ApiKeyService().getKey();
-    if (key != null && key.isNotEmpty) {
-      setState(() {
-        _apiKeyController.text = key;
-        _hasKey = true;
-        _statusMessage = 'Connected';
-      });
-    } else {
-      setState(() {
-        _hasKey = false;
-        _statusMessage = 'Not configured';
-      });
-    }
+    final provider = await _settingsService.getAiProvider();
+    final key = await ApiKeyService().getKey(provider);
+    final model = await _settingsService.getAiModel(provider);
+    if (!mounted) return;
+    setState(() {
+      _provider = provider;
+      _modelController.text = model;
+      _apiKeyController.text = key ?? '';
+      _hasKey = key != null && key.isNotEmpty;
+      _statusMessage = _hasKey ? 'Connected' : 'Not configured';
+    });
+  }
+
+  Future<void> _selectProvider(AiProvider? provider) async {
+    if (provider == null || provider.id == _provider.id) return;
+    await _settingsService.setAiProvider(provider);
+    await _loadKey();
   }
 
   Future<void> _loadCallDetectionState() async {
@@ -96,8 +102,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _saveKey() async {
     final key = _apiKeyController.text.trim();
+    final model = _modelController.text.trim();
     if (key.isEmpty) {
-      await ApiKeyService().deleteKey();
+      await ApiKeyService().deleteKey(_provider);
       setState(() {
         _hasKey = false;
         _statusMessage = 'Not configured';
@@ -110,13 +117,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _statusMessage = 'Validating...';
     });
 
-    final aiService = AiService(apiKey: key);
+    final aiService = AiService(provider: _provider, apiKey: key, model: model);
     final result = await aiService.validateKey();
 
     if (!mounted) return;
 
     if (result == 'valid') {
-      await ApiKeyService().saveKey(key);
+      await ApiKeyService().saveKey(_provider, key);
+      await _settingsService.setAiModel(_provider, model);
       if (!mounted) return;
       setState(() {
         _hasKey = true;
@@ -156,10 +164,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final started = await _callDetectionService.start();
       if (started) {
         _callMatchingService.startListening();
+        await _settingsService.setCallDetectionEnabled(true);
       }
+      // The service reports itself running once Android has created it.
+      await Future.delayed(const Duration(milliseconds: 500));
+      final running = await _callDetectionService.isRunning();
       if (!mounted) return;
-      setState(() => _callServiceRunning = started);
+      setState(() => _callServiceRunning = running);
+      if (!running) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Call detection could not start on this device')),
+        );
+      }
     } else {
+      await _settingsService.setCallDetectionEnabled(false);
       await _callDetectionService.stop();
       _callMatchingService.stopListening();
       if (!mounted) return;
@@ -170,7 +188,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _showSimulateCallDialog() {
     final phoneController = TextEditingController(text: '+1234567890');
     String selectedType = 'incoming';
-    final durationController = TextEditingController(text: '60');
+    final durationController = TextEditingController(text: '20');
 
     showDialog(
       context: context,
@@ -228,20 +246,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _ => CallType.missed,
                 };
 
-                final event = CallEvent(
-                  phoneNumber: phoneController.text.trim(),
-                  type: callType,
-                  duration: Duration(seconds: int.tryParse(durationController.text) ?? 0),
-                  timestamp: DateTime.now(),
-                );
-
+                final number = phoneController.text.trim();
+                final duration = Duration(seconds: int.tryParse(durationController.text) ?? 0);
                 Navigator.pop(ctx);
-                await _callMatchingService.handleCallEvent(event);
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Simulated $selectedType call logged')),
-                  );
-                }
+
+                final messenger = ScaffoldMessenger.of(context);
+                final overlayReady = _showCallOverlay && await FlutterOverlayWindow.isPermissionGranted();
+                messenger.showSnackBar(SnackBar(
+                  content: Text(overlayReady
+                      ? 'Simulating $selectedType call — the overlay will appear now'
+                      : 'Simulating $selectedType call (overlay is off or not permitted)'),
+                ));
+                await _callMatchingService.simulateCall(
+                  phoneNumber: number,
+                  type: callType,
+                  duration: duration,
+                );
+                messenger.showSnackBar(
+                  SnackBar(content: Text('Simulated $selectedType call logged')),
+                );
               },
               child: const Text('Simulate'),
             ),
@@ -254,6 +277,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void dispose() {
     _apiKeyController.dispose();
+    _modelController.dispose();
     super.dispose();
   }
 
@@ -285,7 +309,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('NVIDIA API Key', style: TextStyle(fontWeight: FontWeight.w500)),
+                  DropdownButtonFormField<AiProvider>(
+                    initialValue: _provider,
+                    key: ValueKey(_provider.id),
+                    decoration: const InputDecoration(
+                      labelText: 'Provider',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: [
+                      for (final p in AiProvider.all)
+                        DropdownMenuItem(value: p, child: Text(p.name)),
+                    ],
+                    onChanged: _isChecking ? null : _selectProvider,
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  Text('${_provider.name} API Key', style: const TextStyle(fontWeight: FontWeight.w500)),
                   if (_statusMessage != null) ...[
                     const SizedBox(height: AppSpacing.xs),
                     Text(
@@ -316,13 +354,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ),
                   const SizedBox(height: AppSpacing.md),
+                  TextField(
+                    controller: _modelController,
+                    decoration: InputDecoration(
+                      labelText: 'Model',
+                      helperText: 'Default: ${_provider.defaultModel}',
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
                   Row(
                     children: [
                       Expanded(
                         child: OutlinedButton(
                           onPressed: () {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Visit build.nvidia.com to get a key')),
+                              SnackBar(content: Text('Visit ${_provider.keyUrl} to get a free key')),
                             );
                           },
                           child: const Text('Get Key'),
@@ -441,8 +488,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ],
                     ),
                   ),
-                
-                const Divider(),
+              ],
+
+              const Divider(),
+              ...[
                 SwitchListTile(
                   title: const Text('Show live call overlay'),
                   subtitle: const Text('Show a floating note-taking window during calls'),

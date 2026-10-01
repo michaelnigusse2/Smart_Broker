@@ -1,5 +1,5 @@
 import 'dart:convert';
-import '../../../models/ai_result.dart';
+import '../../models/ai_result.dart';
 
 class AiResponseParser {
   static AiResult parse(String rawResponse) {
@@ -33,13 +33,17 @@ class AiResponseParser {
       String? reminderTitle;
       
       if (reminder != null && reminder is Map<String, dynamic>) {
-        reminderTitle = reminder['title']?.toString();
+        final title = reminder['title']?.toString().trim() ?? '';
+        // An empty title means the model decided no follow-up is needed.
+        reminderTitle = title.isEmpty ? null : title;
         final dateStr = reminder['suggestedDate']?.toString();
         final timeStr = reminder['suggestedTime']?.toString();
         
         if (dateStr != null && timeStr != null && dateStr.isNotEmpty && timeStr.isNotEmpty) {
           try {
-            reminderDate = DateTime.parse('${dateStr}T$timeStr:00');
+            // Accept both HH:MM and HH:MM:SS.
+            final hhmm = timeStr.length > 5 ? timeStr.substring(0, 5) : timeStr;
+            reminderDate = DateTime.parse('${dateStr}T$hhmm:00');
           } catch (e) {
             // Ignore parse errors, reminderDate will be null
           }

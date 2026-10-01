@@ -1,10 +1,15 @@
-import 'dart:convert';
 import 'dart:async';
+import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
 
-import '../../../models/ai_result.dart';
+import '../../models/ai_result.dart';
+import 'ai_provider.dart';
 import 'ai_response_parser.dart';
+import 'api_key_service.dart';
+import 'settings_service.dart';
 
 class AiException implements Exception {
   final String message;
@@ -27,18 +32,52 @@ class AiException implements Exception {
 
 enum ExceptionType { network, rateLimit, invalidKey, unknown }
 
+/// Talks to any OpenAI-compatible chat-completions API (Groq, OpenRouter, NVIDIA…).
 class AiService {
-  static const String _baseUrl = 'https://integrate.api.nvidia.com/v1/chat/completions';
-  static const String _model = 'meta/llama-3.1-8b-instruct';
+  static const _timeout = Duration(seconds: 60);
 
+  final AiProvider provider;
+  final String model;
   final String _apiKey;
 
-  AiService({required String apiKey}) : _apiKey = apiKey;
+  AiService({required this.provider, required String apiKey, String? model})
+      : _apiKey = apiKey,
+        model = (model == null || model.trim().isEmpty) ? provider.defaultModel : model.trim();
+
+  /// Builds a service from the provider, key and model saved in Settings.
+  /// Returns null when no key is configured for the selected provider.
+  static Future<AiService?> fromSettings() async {
+    final settings = SettingsService();
+    final provider = await settings.getAiProvider();
+    final key = await ApiKeyService().getKey(provider);
+    if (key == null || key.isEmpty) return null;
+    return AiService(provider: provider, apiKey: key, model: await settings.getAiModel(provider));
+  }
 
   Map<String, String> get _headers => {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer $_apiKey',
       };
+
+  /// gpt-oss models spend tokens "thinking" first; keep that short.
+  bool get _isReasoningModel => model.contains('gpt-oss');
+
+  Map<String, dynamic> _requestBody(
+    List<Map<String, String>> messages, {
+    required int maxTokens,
+    double temperature = 0.3,
+    Map<String, dynamic>? responseFormat,
+  }) {
+    return {
+      'model': model,
+      'messages': messages,
+      'temperature': temperature,
+      'max_tokens': maxTokens,
+      'stream': false,
+      if (_isReasoningModel && provider.id == AiProvider.groq.id) 'reasoning_effort': 'low',
+      'response_format': ?responseFormat,
+    };
+  }
 
   String _extractErrorMessage(String body) {
     try {
@@ -53,39 +92,35 @@ class AiService {
     }
   }
 
+  Future<http.Response> _post(Map<String, dynamic> body) {
+    return http
+        .post(Uri.parse(provider.chatCompletionsUrl), headers: _headers, body: jsonEncode(body))
+        .timeout(_timeout);
+  }
+
+  /// Sends a tiny request to check the key and model. Returns 'valid' or an error description.
   Future<String> validateKey() async {
     try {
-      final body = jsonEncode({
-        'model': _model,
-        'messages': [
-          {'role': 'user', 'content': 'Respond with exactly the word OK and nothing else.'}
+      final response = await _post(_requestBody(
+        [
+          {'role': 'user', 'content': 'Reply with the word OK.'}
         ],
-        'temperature': 0.2,
-        'top_p': 0.7,
-        'max_tokens': 16,
-        'stream': false,
-      });
+        maxTokens: 256,
+        temperature: 0,
+      ));
 
-      final response = await http
-          .post(Uri.parse(_baseUrl), headers: _headers, body: body)
-          .timeout(const Duration(seconds: 60));
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        final choices = data['choices'] as List<dynamic>?;
-        final content = (choices != null && choices.isNotEmpty)
-            ? (choices.first['message']['content'] as String?)?.trim()
-            : null;
-        if (content != null && content.toUpperCase() == 'OK') {
+      switch (response.statusCode) {
+        case 200:
           return 'valid';
-        }
-        return 'unexpected_response: $content';
-      } else if (response.statusCode == 401 || response.statusCode == 403) {
-        return 'api_error: Invalid API key (${response.statusCode})';
-      } else if (response.statusCode == 429) {
-        return 'api_error: Rate limited. ${_extractErrorMessage(response.body)}';
-      } else {
-        return 'api_error: ${response.statusCode} - ${_extractErrorMessage(response.body)}';
+        case 401:
+        case 403:
+          return 'api_error: Invalid API key (${response.statusCode})';
+        case 404:
+          return 'api_error: Model "$model" not found. ${_extractErrorMessage(response.body)}';
+        case 429:
+          return 'api_error: Rate limited. ${_extractErrorMessage(response.body)}';
+        default:
+          return 'api_error: ${response.statusCode} - ${_extractErrorMessage(response.body)}';
       }
     } on TimeoutException {
       return 'timeout: request took too long';
@@ -110,9 +145,77 @@ class AiService {
     } on AiException {
       rethrow;
     } catch (e) {
-      if (e is AiException) rethrow;
       throw AiException.unknown(e);
     }
+  }
+
+  /// Strict schema for providers that support it. Every field is required, so
+  /// "no reminder" is expressed as an empty title rather than null.
+  static const Map<String, dynamic> _noteSchema = {
+    'type': 'json_schema',
+    'json_schema': {
+      'name': 'note_analysis',
+      'strict': true,
+      'schema': {
+        'type': 'object',
+        'properties': {
+          'summary': {'type': 'string'},
+          'actionItems': {
+            'type': 'array',
+            'items': {'type': 'string'},
+          },
+          'reminder': {
+            'type': 'object',
+            'properties': {
+              'title': {'type': 'string'},
+              'suggestedDate': {'type': 'string'},
+              'suggestedTime': {'type': 'string'},
+            },
+            'required': ['title', 'suggestedDate', 'suggestedTime'],
+            'additionalProperties': false,
+          },
+        },
+        'required': ['summary', 'actionItems', 'reminder'],
+        'additionalProperties': false,
+      },
+    },
+  };
+
+  static const _systemPrompt = '''
+You are an assistant inside SmartBroker, a CRM app for brokers.
+The user just wrote a NOTE about a call or meeting with one contact.
+Extract structured information FROM THE NOTE ONLY.
+
+Respond ONLY with a JSON object in this exact format:
+{
+  "summary": "1-3 sentence factual summary of the NOTE",
+  "actionItems": ["Specific task 1", "Specific task 2"],
+  "reminder": {
+    "title": "Short reminder title",
+    "suggestedDate": "YYYY-MM-DD",
+    "suggestedTime": "HH:MM"
+  }
+}
+
+RULES:
+- Summarize and extract ONLY from the NOTE. The BACKGROUND section is older context: never summarize it, never copy facts or tasks from it into your answer.
+- Never invent details that are not in the NOTE. If the note is very short, the summary is one sentence restating it.
+- Each action item is one clear task taken from the NOTE. No tasks in the note → empty array.
+- Do not repeat tasks listed under EXISTING PENDING TASKS.
+- reminder = the most important follow-up in the NOTE. Resolve relative dates ("tomorrow", "Monday next week", "in 3 days") using the CALENDAR provided — pick the exact date from that list. "Next week <day>" / "<day> next week" means that weekday in the following calendar week.
+- If the note gives no time, use 09:00. If nothing needs a follow-up, set all three reminder fields to empty strings.
+- Return pure JSON. No markdown, no explanations.''';
+
+  /// Today plus the next 14 days with weekday names, so the model doesn't
+  /// have to do calendar arithmetic to resolve "Monday next week".
+  static String _calendarContext(DateTime now) {
+    final day = DateFormat('EEEE yyyy-MM-dd');
+    final buf = StringBuffer('Today: ${day.format(now)} ${DateFormat('HH:mm').format(now)}\n');
+    for (var i = 1; i <= 14; i++) {
+      final d = DateTime(now.year, now.month, now.day + i);
+      buf.writeln('${day.format(d)}${i == 1 ? ' (tomorrow)' : ''}');
+    }
+    return buf.toString().trimRight();
   }
 
   Future<AiResult> _callWithRetry({
@@ -122,64 +225,38 @@ class AiService {
     required String pendingTodos,
     int maxRetries = 1,
   }) async {
-    int attempts = 0;
+    final userPrompt = '''
+CONTACT: $contactName
+
+CALENDAR:
+${_calendarContext(DateTime.now())}
+
+NOTE (the only text to summarize and extract from):
+"""
+$rawNote
+"""
+
+BACKGROUND — earlier note summaries for this contact (context only, do NOT summarize):
+$previousNotes
+
+EXISTING PENDING TASKS (do not repeat):
+$pendingTodos''';
+
+    final messages = [
+      {'role': 'system', 'content': _systemPrompt},
+      {'role': 'user', 'content': userPrompt},
+    ];
+
+    var useSchema = provider.supportsJsonSchema;
+    var attempts = 0;
     while (attempts <= maxRetries) {
       try {
         attempts++;
-        final currentDateTime = DateTime.now().toIso8601String();
-
-        final prompt = '''
-You are an AI assistant for a CRM app called SmartBroker.
-Analyze the following meeting note and extract structured information.
-
-CONTACT: $contactName
-CURRENT DATE: $currentDateTime
-NOTE: $rawNote
-
-PREVIOUS CONTEXT:
-$previousNotes
-
-EXISTING PENDING TASKS:
-$pendingTodos
-
-Respond ONLY with a JSON object in this exact format:
-{
-  "summary": "A concise 2-3 sentence summary of the key discussion points",
-  "actionItems": [
-    "Specific actionable task 1",
-    "Specific actionable task 2"
-  ],
-  "reminder": {
-    "title": "Brief reminder title",
-    "suggestedDate": "YYYY-MM-DD",
-    "suggestedTime": "HH:MM (24h format)"
-  }
-}
-
-RULES:
-- The summary should be factual and concise. Do not add information not present in the note.
-- Each action item should be a single clear task. Do not combine multiple tasks into one.
-- If there are no clear action items, return an empty array.
-- The reminder should be about the most important follow-up. If nothing needs follow-up, set reminder to null.
-- The suggestedDate should be a real calendar date.
-- Do not include tasks that already exist in the pending tasks list.
-- Do not use markdown formatting. Return pure JSON only.
-''';
-
-        final body = jsonEncode({
-          'model': _model,
-          'messages': [
-            {'role': 'user', 'content': prompt}
-          ],
-          'temperature': 0.3,
-          'top_p': 0.7,
-          'max_tokens': 1024,
-          'stream': false,
-        });
-
-        final response = await http
-            .post(Uri.parse(_baseUrl), headers: _headers, body: body)
-            .timeout(const Duration(seconds: 60));
+        final response = await _post(_requestBody(
+          messages,
+          maxTokens: 2048,
+          responseFormat: useSchema ? _noteSchema : null,
+        ));
 
         if (response.statusCode == 200) {
           final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -188,27 +265,33 @@ RULES:
             throw Exception('API returned no choices');
           }
           final content = choices.first['message']['content'] as String?;
-          if (content == null) {
-            throw Exception('API returned null content');
+          if (content == null || content.trim().isEmpty) {
+            throw Exception('API returned empty content');
           }
+          debugPrint('AiService [${provider.id}/$model] response: $content');
           return AiResponseParser.parse(content);
         } else if (response.statusCode == 401 || response.statusCode == 403) {
           throw AiException.invalidKey();
         } else if (response.statusCode == 429) {
           throw AiException.rateLimited();
+        } else if (response.statusCode == 400 && useSchema) {
+          debugPrint('AiService: structured output rejected, retrying without it: ${response.body}');
+          // The chosen model may not support structured output — retry without it.
+          useSchema = false;
+          attempts--;
+          continue;
         } else {
           throw Exception('HTTP ${response.statusCode}: ${_extractErrorMessage(response.body)}');
         }
       } on TimeoutException {
-        throw AiException.unknown('Request timed out — the AI model is too slow. Try again later or switch to a smaller model.');
+        throw AiException.unknown('Request timed out — the AI model is too slow. Try again later or pick a different model in Settings.');
       } on AiException {
         rethrow;
       } catch (e) {
-        if (e is AiException) rethrow;
         if (attempts > maxRetries) {
           throw AiException.unknown(e);
         }
-        await Future.delayed(Duration(seconds: 1 * attempts));
+        await Future.delayed(Duration(seconds: attempts));
       }
     }
     throw AiException.unknown('Max retries exceeded');
