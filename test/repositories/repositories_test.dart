@@ -16,8 +16,7 @@ Future<int> _count(String table) async {
   return rows.first['n'] as int;
 }
 
-Future<int> _pendingCount(String contactId) async =>
-    (await ContactRepository().getById(contactId))!.pendingTasksCount;
+Future<int> _pendingCount(String contactId) async => (await ContactRepository().getById(contactId))!.pendingTasksCount;
 
 void main() {
   setUp(useFreshTestDatabase);
@@ -31,13 +30,15 @@ void main() {
       await insertTodo(contactId: gone.id, noteId: noteId);
       await insertTodo(contactId: keep.id, title: 'Unrelated task');
       await insertReminder(contactId: gone.id, noteId: noteId, at: DateTime.now().add(const Duration(days: 1)));
-      await CallRepository().insert(CallEntry(
-        id: 'call-1',
-        contactId: gone.id,
-        type: CallType.incoming,
-        duration: const Duration(minutes: 3),
-        timestamp: DateTime.now(),
-      ));
+      await CallRepository().insert(
+        CallEntry(
+          id: 'call-1',
+          contactId: gone.id,
+          type: CallType.incoming,
+          duration: const Duration(minutes: 3),
+          timestamp: DateTime.now(),
+        ),
+      );
 
       await ContactRepository().delete(gone.id);
 
@@ -129,7 +130,11 @@ void main() {
     test('getAll filters pending, completed and overdue (open > 7 days)', () async {
       final contact = await insertContact();
       await insertTodo(contactId: contact.id, title: 'fresh');
-      await insertTodo(contactId: contact.id, title: 'old', createdAt: DateTime.now().subtract(const Duration(days: 10)));
+      await insertTodo(
+        contactId: contact.id,
+        title: 'old',
+        createdAt: DateTime.now().subtract(const Duration(days: 10)),
+      );
       await insertTodo(contactId: contact.id, title: 'done', completed: true);
 
       Future<List<String>> titles(TaskFilter filter) async =>
@@ -159,8 +164,18 @@ void main() {
       final now = DateTime.now();
       await insertReminder(contactId: contact.id, id: 'past', at: now.subtract(const Duration(hours: 2)));
       await insertReminder(contactId: contact.id, id: 'future', at: now.add(const Duration(hours: 2)));
-      await insertReminder(contactId: contact.id, id: 'past-done', at: now.subtract(const Duration(days: 1)), completed: true);
-      await insertReminder(contactId: contact.id, id: 'future-done', at: now.add(const Duration(days: 1)), completed: true);
+      await insertReminder(
+        contactId: contact.id,
+        id: 'past-done',
+        at: now.subtract(const Duration(days: 1)),
+        completed: true,
+      );
+      await insertReminder(
+        contactId: contact.id,
+        id: 'future-done',
+        at: now.add(const Duration(days: 1)),
+        completed: true,
+      );
 
       expect((await ReminderRepository().getUpcoming()).map((r) => r.id), ['future']);
       expect((await ReminderRepository().getOverdue()).map((r) => r.id), ['past']);

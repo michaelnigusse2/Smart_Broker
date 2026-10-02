@@ -8,11 +8,9 @@ DateTime nextFullHour([DateTime? now]) {
 }
 
 /// Whether a notification scheduled for [dateTime] would still fire.
-bool isSchedulable(DateTime dateTime, [DateTime? now]) =>
-    dateTime.isAfter(now ?? DateTime.now());
+bool isSchedulable(DateTime dateTime, [DateTime? now]) => dateTime.isAfter(now ?? DateTime.now());
 
-bool isSameCalendarDay(DateTime a, DateTime b) =>
-    a.year == b.year && a.month == b.month && a.day == b.day;
+bool isSameCalendarDay(DateTime a, DateTime b) => a.year == b.year && a.month == b.month && a.day == b.day;
 
 /// Deterministic 31-bit notification id for a string id (32-bit FNV-1a).
 ///

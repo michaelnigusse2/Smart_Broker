@@ -1,20 +1,20 @@
 class TodoItem {
   final String id;
   final String contactId;
-  final String? noteId;           // NEW — links to the note that generated this todo
+  final String? noteId; // NEW — links to the note that generated this todo
   final String title;
   final bool isCompleted;
   final DateTime createdAt;
-  final DateTime? completedAt;    // NEW
+  final DateTime? completedAt; // NEW
 
   const TodoItem({
     required this.id,
     required this.contactId,
-    this.noteId,                  // NEW
+    this.noteId, // NEW
     required this.title,
     this.isCompleted = false,
     required this.createdAt,
-    this.completedAt,             // NEW
+    this.completedAt, // NEW
   });
 
   Map<String, dynamic> toMap() {
@@ -37,9 +37,7 @@ class TodoItem {
       title: map['title'],
       isCompleted: map['isCompleted'] == 1,
       createdAt: DateTime.fromMillisecondsSinceEpoch(map['createdAt']),
-      completedAt: map['completedAt'] != null
-          ? DateTime.fromMillisecondsSinceEpoch(map['completedAt'])
-          : null,
+      completedAt: map['completedAt'] != null ? DateTime.fromMillisecondsSinceEpoch(map['completedAt']) : null,
     );
   }
 

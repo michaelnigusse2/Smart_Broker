@@ -56,7 +56,7 @@ class ContactCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: AppSpacing.md),
-  
+
                   // Name + phone
                   Expanded(
                     child: Column(

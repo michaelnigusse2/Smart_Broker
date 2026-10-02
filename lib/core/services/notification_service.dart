@@ -17,8 +17,7 @@ class NotificationService {
   factory NotificationService() => _instance;
   NotificationService._internal();
 
-  final FlutterLocalNotificationsPlugin _plugin =
-      FlutterLocalNotificationsPlugin();
+  final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
 
   bool _initialized = false;
 
@@ -44,8 +43,7 @@ class NotificationService {
     }
 
     // 2. Android settings
-    const androidSettings =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
+    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
 
     // 3. iOS settings — explicitly request all three permissions
     const darwinSettings = DarwinInitializationSettings(
@@ -66,14 +64,12 @@ class NotificationService {
     // 5. Request Android 13+ runtime notification permission
     if (Platform.isAndroid) {
       await _plugin
-          .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>()
+          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
           ?.requestNotificationsPermission();
 
       // Exact alarm permission (Android 12+). Only ask when it isn't granted —
       // asking opens a system settings page every time.
-      final android = _plugin.resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>();
+      final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
       if (android != null && !(await android.canScheduleExactNotifications() ?? false)) {
         await android.requestExactAlarmsPermission();
       }
@@ -88,8 +84,10 @@ class NotificationService {
       final pending = await CallOverlayState.takePendingReview();
       if (pending != null) {
         final noteId = await CallOverlayState.savePendingNote(pending);
-        AppRoutes.globalNavigatorKey.currentState
-            ?.pushNamed(AppRoutes.aiReview, arguments: {...pending, 'noteId': ?noteId});
+        AppRoutes.globalNavigatorKey.currentState?.pushNamed(
+          AppRoutes.aiReview,
+          arguments: {...pending, 'noteId': ?noteId},
+        );
         return;
       }
       if (CallOverlayState.tookRecently) return; // AI Review was just opened on resume.
@@ -150,8 +148,8 @@ class NotificationService {
 
     const notificationDetails = NotificationDetails(
       android: AndroidNotificationDetails(
-        'reminders',   // channel id
-        'Reminders',   // channel name
+        'reminders', // channel id
+        'Reminders', // channel name
         channelDescription: 'Notifications for upcoming reminders',
         importance: Importance.max,
         priority: Priority.high,
@@ -171,9 +169,7 @@ class NotificationService {
       await _plugin.zonedSchedule(
         id: notificationId,
         title: reminder.title,
-        body: reminder.description.isNotEmpty
-            ? reminder.description
-            : 'You have an upcoming reminder.',
+        body: reminder.description.isNotEmpty ? reminder.description : 'You have an upcoming reminder.',
         scheduledDate: scheduledDate,
         notificationDetails: notificationDetails,
         androidScheduleMode: await _scheduleMode(),
@@ -189,8 +185,7 @@ class NotificationService {
   /// rather than failing silently.
   Future<AndroidScheduleMode> _scheduleMode() async {
     if (!Platform.isAndroid) return AndroidScheduleMode.exactAllowWhileIdle;
-    final android = _plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
+    final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
     final exact = await android?.canScheduleExactNotifications() ?? false;
     return exact ? AndroidScheduleMode.exactAllowWhileIdle : AndroidScheduleMode.inexactAllowWhileIdle;
   }

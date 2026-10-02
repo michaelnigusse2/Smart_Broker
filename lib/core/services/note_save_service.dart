@@ -46,11 +46,10 @@ class NoteSaveService {
   NoteSaveService({
     Future<void> Function(String reminderId)? cancelReminder,
     Future<bool> Function(Reminder reminder)? scheduleReminder,
-  })  : _cancelReminder = cancelReminder ?? NotificationService().cancelReminder,
-        _scheduleReminder = scheduleReminder ?? NotificationService().scheduleReminder;
+  }) : _cancelReminder = cancelReminder ?? NotificationService().cancelReminder,
+       _scheduleReminder = scheduleReminder ?? NotificationService().scheduleReminder;
 
-  static String _normalise(String title) =>
-      title.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+  static String _normalise(String title) => title.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
 
   /// Open tasks from an earlier review of [noteId] that saving
   /// [newTaskTitles] would remove. Used to warn before saving.
@@ -58,10 +57,7 @@ class NoteSaveService {
     final db = await DatabaseHelper().database;
     final rows = await db.query('todos', where: 'noteId = ? AND isCompleted = 0', whereArgs: [noteId]);
     final keep = newTaskTitles.map(_normalise).toSet();
-    return rows
-        .map(TodoItem.fromMap)
-        .where((t) => !keep.contains(_normalise(t.title)))
-        .toList();
+    return rows.map(TodoItem.fromMap).where((t) => !keep.contains(_normalise(t.title))).toList();
   }
 
   Future<void> apply(ReviewedNote review) async {
@@ -79,9 +75,11 @@ class NoteSaveService {
       );
 
       // ── Tasks ────────────────────────────────────────────────────
-      final existing = (await txn.query('todos', where: 'noteId = ?', whereArgs: [review.noteId]))
-          .map(TodoItem.fromMap)
-          .toList();
+      final existing = (await txn.query(
+        'todos',
+        where: 'noteId = ?',
+        whereArgs: [review.noteId],
+      )).map(TodoItem.fromMap).toList();
       final alreadyThere = <String>{};
       for (final todo in existing) {
         final key = _normalise(todo.title);
@@ -101,21 +99,26 @@ class NoteSaveService {
         final key = _normalise(trimmed);
         if (trimmed.isEmpty || alreadyThere.contains(key)) continue;
         alreadyThere.add(key);
-        await txn.insert('todos', TodoItem(
-          id: _uuid.v4(),
-          contactId: review.contactId,
-          noteId: review.noteId,
-          title: trimmed,
-          createdAt: now,
-        ).toMap());
+        await txn.insert(
+          'todos',
+          TodoItem(
+            id: _uuid.v4(),
+            contactId: review.contactId,
+            noteId: review.noteId,
+            title: trimmed,
+            createdAt: now,
+          ).toMap(),
+        );
       }
       await TodoRepository.recountForContact(txn, review.contactId);
 
       // ── Reminder ────────────────────────────────────────────────
-      final reminders = (await txn.query('reminders',
-              where: 'noteId = ?', whereArgs: [review.noteId], orderBy: 'createdAt ASC'))
-          .map(Reminder.fromMap)
-          .toList();
+      final reminders = (await txn.query(
+        'reminders',
+        where: 'noteId = ?',
+        whereArgs: [review.noteId],
+        orderBy: 'createdAt ASC',
+      )).map(Reminder.fromMap).toList();
       final wanted = review.reminder;
       if (wanted == null) {
         for (final r in reminders) {

@@ -177,16 +177,18 @@ class _CallOverlayScreenState extends State<CallOverlayScreen> {
             elevation: 8,
             borderRadius: BorderRadius.circular(AppRadius.lg),
             clipBehavior: Clip.antiAlias,
-            child: _submitted ? _buildSubmitted() : Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _buildHeader(),
-                const Divider(height: 1),
-                Expanded(child: _buildContent()),
-                const Divider(height: 1),
-                _buildFooter(),
-              ],
-            ),
+            child: _submitted
+                ? _buildSubmitted()
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _buildHeader(),
+                      const Divider(height: 1),
+                      Expanded(child: _buildContent()),
+                      const Divider(height: 1),
+                      _buildFooter(),
+                    ],
+                  ),
           ),
         ),
       ),
@@ -237,16 +239,17 @@ class _CallOverlayScreenState extends State<CallOverlayScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(_title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                Text(
+                  _title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
                 Text(subtitle, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
               ],
             ),
           ),
-          if (_showSavedIndicator)
-            const Text('Draft saved', style: TextStyle(fontSize: 10, color: AppColors.primary)),
+          if (_showSavedIndicator) const Text('Draft saved', style: TextStyle(fontSize: 10, color: AppColors.primary)),
         ],
       ),
     );
@@ -257,30 +260,40 @@ class _CallOverlayScreenState extends State<CallOverlayScreen> {
       padding: const EdgeInsets.all(AppSpacing.md),
       children: [
         if (_contactId == null)
-          const Text('Not a saved contact yet.',
-              style: TextStyle(fontStyle: FontStyle.italic, color: AppColors.textTertiary))
+          const Text(
+            'Not a saved contact yet.',
+            style: TextStyle(fontStyle: FontStyle.italic, color: AppColors.textTertiary),
+          )
         else ...[
-          const Text('Pending tasks',
-              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.textSecondary)),
+          const Text(
+            'Pending tasks',
+            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.textSecondary),
+          ),
           const SizedBox(height: AppSpacing.xs),
           if (_pendingTasks.isEmpty)
-            const Text('No pending tasks',
-                style: TextStyle(fontStyle: FontStyle.italic, color: AppColors.textTertiary))
+            const Text(
+              'No pending tasks',
+              style: TextStyle(fontStyle: FontStyle.italic, color: AppColors.textTertiary),
+            )
           else
-            ..._pendingTasks.map((t) => Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 2),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(LucideIcons.square, size: 14, color: AppColors.textTertiary),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(child: Text(t, style: const TextStyle(fontSize: 14))),
-                    ],
-                  ),
-                )),
+            ..._pendingTasks.map(
+              (t) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(LucideIcons.square, size: 14, color: AppColors.textTertiary),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(child: Text(t, style: const TextStyle(fontSize: 14))),
+                  ],
+                ),
+              ),
+            ),
           const SizedBox(height: AppSpacing.lg),
-          const Text('Last note',
-              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.textSecondary)),
+          const Text(
+            'Last note',
+            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.textSecondary),
+          ),
           const SizedBox(height: AppSpacing.xs),
           Text(
             _lastNoteSummary.isEmpty ? 'No previous notes' : _lastNoteSummary,

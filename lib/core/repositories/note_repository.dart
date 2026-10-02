@@ -33,27 +33,38 @@ class NoteRepository {
       INNER JOIN contacts ON notes.contactId = contacts.id
       ORDER BY notes.createdAt DESC
     ''');
-    return maps.map((m) => NoteWithContact(
-      note: Note.fromMap(m),
-      contactName: m['contactName'] as String,
-      contactAvatarUrl: m['contactAvatarUrl'] as String? ?? '',
-    )).toList();
+    return maps
+        .map(
+          (m) => NoteWithContact(
+            note: Note.fromMap(m),
+            contactName: m['contactName'] as String,
+            contactAvatarUrl: m['contactAvatarUrl'] as String? ?? '',
+          ),
+        )
+        .toList();
   }
 
   Future<List<NoteWithContact>> search(String query) async {
     final db = await _db.database;
-    final maps = await db.rawQuery('''
+    final maps = await db.rawQuery(
+      '''
       SELECT notes.*, contacts.name AS contactName, contacts.avatarUrl AS contactAvatarUrl
       FROM notes
       INNER JOIN contacts ON notes.contactId = contacts.id
       WHERE notes.rawText LIKE ? OR notes.aiSummary LIKE ?
       ORDER BY notes.createdAt DESC
-    ''', ['%$query%', '%$query%']);
-    return maps.map((m) => NoteWithContact(
-      note: Note.fromMap(m),
-      contactName: m['contactName'] as String,
-      contactAvatarUrl: m['contactAvatarUrl'] as String? ?? '',
-    )).toList();
+    ''',
+      ['%$query%', '%$query%'],
+    );
+    return maps
+        .map(
+          (m) => NoteWithContact(
+            note: Note.fromMap(m),
+            contactName: m['contactName'] as String,
+            contactAvatarUrl: m['contactAvatarUrl'] as String? ?? '',
+          ),
+        )
+        .toList();
   }
 
   /// Persists the raw note text right away (before any AI processing) and
@@ -73,13 +84,16 @@ class NoteRepository {
         await txn.update('notes', {'rawText': rawText}, where: 'id = ?', whereArgs: [id]);
       } else {
         id = _uuid.v4();
-        await txn.insert('notes', Note(
-          id: id,
-          contactId: contactId,
-          rawText: rawText,
-          aiSummary: '',
-          createdAt: now,
-        ).toMap());
+        await txn.insert(
+          'notes',
+          Note(
+            id: id,
+            contactId: contactId,
+            rawText: rawText,
+            aiSummary: '',
+            createdAt: now,
+          ).toMap(),
+        );
       }
       await txn.update(
         'contacts',

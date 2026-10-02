@@ -35,7 +35,8 @@ void main() {
     });
 
     test('keeps reminder title when date is malformed', () {
-      const raw = '{"summary": "S", "actionItems": [], '
+      const raw =
+          '{"summary": "S", "actionItems": [], '
           '"reminder": {"title": "Follow up", "suggestedDate": "next week", "suggestedTime": "soon"}}';
 
       final result = AiResponseParser.parse(raw);
@@ -45,7 +46,8 @@ void main() {
     });
 
     test('treats an empty reminder title as no reminder', () {
-      const raw = '{"summary": "S", "actionItems": ["A"], '
+      const raw =
+          '{"summary": "S", "actionItems": ["A"], '
           '"reminder": {"title": "", "suggestedDate": "", "suggestedTime": ""}}';
 
       final result = AiResponseParser.parse(raw);
@@ -55,7 +57,8 @@ void main() {
     });
 
     test('accepts HH:MM:SS times', () {
-      const raw = '{"summary": "S", "actionItems": [], '
+      const raw =
+          '{"summary": "S", "actionItems": [], '
           '"reminder": {"title": "Call", "suggestedDate": "2026-10-02", "suggestedTime": "09:05:00"}}';
 
       expect(AiResponseParser.parse(raw).reminderDate, DateTime(2026, 10, 2, 9, 5));

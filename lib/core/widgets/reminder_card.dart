@@ -20,7 +20,7 @@ class ReminderCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isOverdue = reminder.dateTime.isBefore(DateTime.now()) && !reminder.completed;
-    
+
     return Container(
       margin: const EdgeInsets.only(bottom: AppSpacing.sm),
       decoration: BoxDecoration(
@@ -54,9 +54,7 @@ class ReminderCard extends StatelessWidget {
                     ),
                     color: reminder.completed ? Colors.green : Colors.transparent,
                   ),
-                  child: reminder.completed
-                      ? const Icon(LucideIcons.check, size: 14, color: Colors.white)
-                      : null,
+                  child: reminder.completed ? const Icon(LucideIcons.check, size: 14, color: Colors.white) : null,
                 ),
               ),
               const SizedBox(width: AppSpacing.md),
@@ -67,8 +65,8 @@ class ReminderCard extends StatelessWidget {
                     Text(
                       reminder.title,
                       style: theme.textTheme.bodyMedium?.copyWith(
-                        color: reminder.completed 
-                            ? AppColors.textTertiary 
+                        color: reminder.completed
+                            ? AppColors.textTertiary
                             : (isOverdue ? AppColors.error : AppColors.textPrimary),
                         fontWeight: FontWeight.w500,
                         decoration: reminder.completed ? TextDecoration.lineThrough : null,
@@ -80,8 +78,8 @@ class ReminderCard extends StatelessWidget {
                     Text(
                       DateFormat.MMMd().add_jm().format(reminder.dateTime),
                       style: theme.textTheme.labelSmall?.copyWith(
-                        color: reminder.completed 
-                            ? AppColors.textTertiary 
+                        color: reminder.completed
+                            ? AppColors.textTertiary
                             : (isOverdue ? AppColors.error : AppColors.textSecondary),
                       ),
                     ),

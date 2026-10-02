@@ -47,7 +47,7 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
         _contactId = args.contactId;
         _noteController.text = args.rawText;
       }
-      
+
       _loadDraftIfNeeded();
     }
   }
@@ -146,113 +146,115 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
         if (!didPop) _close();
       },
       child: Scaffold(
-      backgroundColor: AppColors.surface, // Distraction free pure white
-      appBar: AppBar(
-        backgroundColor: AppColors.surface,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(LucideIcons.x),
-          tooltip: 'Close',
-          onPressed: _isSaving ? null : _close,
+        backgroundColor: AppColors.surface, // Distraction free pure white
+        appBar: AppBar(
+          backgroundColor: AppColors.surface,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(LucideIcons.x),
+            tooltip: 'Close',
+            onPressed: _isSaving ? null : _close,
+          ),
+          actions: [
+            TextButton(
+              onPressed: _isSaving ? null : _save,
+              child: const Text('Save'),
+            ),
+            TextButton.icon(
+              onPressed: _isSaving ? null : _saveAndReview,
+              icon: const Icon(LucideIcons.sparkles, size: 16),
+              label: const Text('AI Review'),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: _isSaving ? null : _save,
-            child: const Text('Save'),
-          ),
-          TextButton.icon(
-            onPressed: _isSaving ? null : _saveAndReview,
-            icon: const Icon(LucideIcons.sparkles, size: 16),
-            label: const Text('AI Review'),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-        ],
-      ),
-      body: ConstrainedLayout(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxl, vertical: AppSpacing.lg),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (_isPostCall)
-                Container(
-                  margin: const EdgeInsets.only(bottom: AppSpacing.lg),
-                  padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(AppRadius.md),
-                    border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(LucideIcons.phone, size: 16, color: AppColors.primary),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: Text(
-                          'Auto-detected call — $_durationStr',
-                          style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w500, fontSize: 13),
+        body: ConstrainedLayout(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxl, vertical: AppSpacing.lg),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (_isPostCall)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: AppSpacing.lg),
+                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                      border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(LucideIcons.phone, size: 16, color: AppColors.primary),
+                        const SizedBox(width: AppSpacing.sm),
+                        Expanded(
+                          child: Text(
+                            'Auto-detected call — $_durationStr',
+                            style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w500, fontSize: 13),
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              if (_isDraftRestored)
-                Container(
-                  margin: const EdgeInsets.only(bottom: AppSpacing.md),
-                  padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(AppRadius.sm),
-                    border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(LucideIcons.fileClock, color: AppColors.primary, size: 16),
-                      const SizedBox(width: AppSpacing.sm),
-                      const Expanded(
-                        child: Text(
-                          'Draft from your last call restored',
-                          style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w500, fontSize: 13),
+                if (_isDraftRestored)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: AppSpacing.md),
+                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(AppRadius.sm),
+                      border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(LucideIcons.fileClock, color: AppColors.primary, size: 16),
+                        const SizedBox(width: AppSpacing.sm),
+                        const Expanded(
+                          child: Text(
+                            'Draft from your last call restored',
+                            style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w500, fontSize: 13),
+                          ),
                         ),
-                      ),
-                      IconButton(
-                        icon: const Icon(LucideIcons.x, color: AppColors.primary, size: 16),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                        onPressed: () => setState(() => _isDraftRestored = false),
-                      ),
-                    ],
+                        IconButton(
+                          icon: const Icon(LucideIcons.x, color: AppColors.primary, size: 16),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          onPressed: () => setState(() => _isDraftRestored = false),
+                        ),
+                      ],
+                    ),
+                  ),
+                Text(
+                  'Meeting Notes',
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(color: AppColors.textTertiary),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                Expanded(
+                  child: TextField(
+                    controller: _noteController,
+                    maxLines: null,
+                    expands: true,
+                    autofocus: true,
+                    textAlignVertical: TextAlignVertical.top,
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontSize: 18, height: 1.6),
+                    decoration: InputDecoration(
+                      hintText: 'Start typing...',
+                      hintStyle: Theme.of(
+                        context,
+                      ).textTheme.bodyLarge?.copyWith(fontSize: 18, color: AppColors.textTertiary),
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      filled: false,
+                      contentPadding: EdgeInsets.zero,
+                    ),
                   ),
                 ),
-              Text(
-                'Meeting Notes',
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(color: AppColors.textTertiary),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Expanded(
-                child: TextField(
-                  controller: _noteController,
-                  maxLines: null,
-                  expands: true,
-                  autofocus: true,
-                  textAlignVertical: TextAlignVertical.top,
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontSize: 18, height: 1.6),
-                  decoration: InputDecoration(
-                    hintText: 'Start typing...',
-                    hintStyle: Theme.of(context).textTheme.bodyLarge?.copyWith(fontSize: 18, color: AppColors.textTertiary),
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    filled: false,
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
-    ),
     );
   }
 }

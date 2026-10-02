@@ -34,13 +34,13 @@ class _AiReviewScreenState extends State<AiReviewScreen> {
   final NoteRepository _noteRepo = NoteRepository();
   final TodoRepository _todoRepo = TodoRepository();
   final ContactRepository _contactRepo = ContactRepository();
-  
+
   late final TextEditingController _summaryController;
   final List<TextEditingController> _taskControllers = [];
   bool _includeReminder = true;
   final TextEditingController _reminderTitleController = TextEditingController();
   DateTime _reminderDateTime = DateTime.now().add(const Duration(days: 1));
-  
+
   bool _initialized = false;
   bool _isSaving = false;
   String? _saveError;
@@ -59,14 +59,9 @@ class _AiReviewScreenState extends State<AiReviewScreen> {
         _noteId = args['noteId'] as String?;
       }
       _initialized = true;
-      
-      _reminderDateTime = DateTime(
-        _reminderDateTime.year, 
-        _reminderDateTime.month, 
-        _reminderDateTime.day, 
-        9, 0
-      );
-      
+
+      _reminderDateTime = DateTime(_reminderDateTime.year, _reminderDateTime.month, _reminderDateTime.day, 9, 0);
+
       _summaryController = TextEditingController();
       _checkApiKeyAndAnalyze();
     }
@@ -119,7 +114,7 @@ class _AiReviewScreenState extends State<AiReviewScreen> {
       _aiError = null;
       _loadingMessage = 'Reading your notes...';
     });
-    
+
     _startLoadingMessages();
 
     try {
@@ -163,7 +158,7 @@ class _AiReviewScreenState extends State<AiReviewScreen> {
         for (final item in result.actionItems) {
           _taskControllers.add(TextEditingController(text: item));
         }
-        
+
         _reminderTitleController.text = result.reminderTitle ?? '';
         if (result.reminderTitle != null) {
           _includeReminder = true;
@@ -173,7 +168,7 @@ class _AiReviewScreenState extends State<AiReviewScreen> {
         } else {
           _includeReminder = false;
         }
-        
+
         _isProcessing = false;
       });
     } catch (e) {
@@ -244,16 +239,11 @@ class _AiReviewScreenState extends State<AiReviewScreen> {
     if (time == null || !mounted) return;
 
     setState(() {
-      _reminderDateTime = DateTime(
-        date.year, date.month, date.day, time.hour, time.minute
-      );
+      _reminderDateTime = DateTime(date.year, date.month, date.day, time.hour, time.minute);
     });
   }
 
-  List<String> get _taskTitles => _taskControllers
-      .map((c) => c.text.trim())
-      .where((t) => t.isNotEmpty)
-      .toList();
+  List<String> get _taskTitles => _taskControllers.map((c) => c.text.trim()).where((t) => t.isNotEmpty).toList();
 
   /// Leaves AI Review and the note editor, back to where the note was started.
   void _finish() {
@@ -292,8 +282,10 @@ class _AiReviewScreenState extends State<AiReviewScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('This saves the summary, $taskCount ${taskCount == 1 ? "task" : "tasks"}'
-                '${_includeReminder ? " and a reminder" : ""}.'),
+            Text(
+              'This saves the summary, $taskCount ${taskCount == 1 ? "task" : "tasks"}'
+              '${_includeReminder ? " and a reminder" : ""}.',
+            ),
             if (removed.isNotEmpty) ...[
               const SizedBox(height: AppSpacing.md),
               const Text('These open tasks from the earlier review will be removed:'),
@@ -321,17 +313,19 @@ class _AiReviewScreenState extends State<AiReviewScreen> {
       final reminderTitle = typedTitle.isNotEmpty
           ? typedTitle
           : _summaryController.text.isNotEmpty
-              ? 'Follow up: ${_summaryController.text.split('.').first}'
-              : 'Follow up reminder';
+          ? 'Follow up: ${_summaryController.text.split('.').first}'
+          : 'Follow up reminder';
 
-      await NoteSaveService().apply(ReviewedNote(
-        noteId: _noteId!,
-        contactId: _contactId!,
-        rawText: _rawText!,
-        summary: _summaryController.text.trim(),
-        taskTitles: _taskTitles,
-        reminder: _includeReminder ? (title: reminderTitle, dateTime: _reminderDateTime) : null,
-      ));
+      await NoteSaveService().apply(
+        ReviewedNote(
+          noteId: _noteId!,
+          contactId: _contactId!,
+          rawText: _rawText!,
+          summary: _summaryController.text.trim(),
+          taskTitles: _taskTitles,
+          reminder: _includeReminder ? (title: reminderTitle, dateTime: _reminderDateTime) : null,
+        ),
+      );
       await OverlayDraftService().clearDraft(_contactId!);
 
       if (mounted) _finish();
@@ -381,179 +375,194 @@ class _AiReviewScreenState extends State<AiReviewScreen> {
                 ),
               )
             : _aiError != null
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(AppSpacing.xl),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(LucideIcons.alertTriangle, size: 48, color: AppColors.error),
-                          const SizedBox(height: AppSpacing.lg),
-                          Text(
-                            _aiError!,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(color: AppColors.error),
-                          ),
-                          const SizedBox(height: AppSpacing.xl),
-                          ElevatedButton.icon(
-                            icon: const Icon(LucideIcons.refreshCw, size: 18),
-                            label: const Text('Retry'),
-                            onPressed: () => _checkApiKeyAndAnalyze(),
-                          ),
-                          const SizedBox(height: AppSpacing.sm),
-                          TextButton(
-                            onPressed: _keepWithoutAi,
-                            child: const Text('Keep note without AI'),
-                          ),
-                        ],
+            ? Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(AppSpacing.xl),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(LucideIcons.alertTriangle, size: 48, color: AppColors.error),
+                      const SizedBox(height: AppSpacing.lg),
+                      Text(
+                        _aiError!,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: AppColors.error),
+                      ),
+                      const SizedBox(height: AppSpacing.xl),
+                      ElevatedButton.icon(
+                        icon: const Icon(LucideIcons.refreshCw, size: 18),
+                        label: const Text('Retry'),
+                        onPressed: () => _checkApiKeyAndAnalyze(),
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      TextButton(
+                        onPressed: _keepWithoutAi,
+                        child: const Text('Keep note without AI'),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            : SingleChildScrollView(
+                padding: const EdgeInsets.all(AppSpacing.xl),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (_saveError != null) ...[
+                      Container(
+                        padding: const EdgeInsets.all(AppSpacing.md),
+                        decoration: BoxDecoration(
+                          color: AppColors.error.withValues(alpha: 0.1),
+                          borderRadius: AppRadius.card,
+                          border: Border.all(color: AppColors.error.withValues(alpha: 0.3)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(LucideIcons.alertCircle, color: AppColors.error, size: 20),
+                            const SizedBox(width: AppSpacing.md),
+                            Expanded(
+                              child: Text(_saveError!, style: TextStyle(color: AppColors.error)),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.lg),
+                    ],
+
+                    const InfoChip(label: 'AI Generated', color: AppColors.primary),
+
+                    const SectionHeader(
+                      title: 'Summary',
+                      padding: EdgeInsets.only(top: AppSpacing.xl, bottom: AppSpacing.sm),
+                    ),
+                    TextField(
+                      controller: _summaryController,
+                      maxLines: null,
+                      maxLength: 500,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                      decoration: InputDecoration(
+                        filled: true,
+                        fillColor: AppColors.surfaceElevated,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide.none,
+                        ),
+                        contentPadding: const EdgeInsets.all(AppSpacing.md),
                       ),
                     ),
-                  )
-                : SingleChildScrollView(
-                    padding: const EdgeInsets.all(AppSpacing.xl),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (_saveError != null) ...[
-                          Container(
-                            padding: const EdgeInsets.all(AppSpacing.md),
-                            decoration: BoxDecoration(
-                              color: AppColors.error.withValues(alpha: 0.1),
-                              borderRadius: AppRadius.card,
-                              border: Border.all(color: AppColors.error.withValues(alpha: 0.3)),
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(LucideIcons.alertCircle, color: AppColors.error, size: 20),
-                                const SizedBox(width: AppSpacing.md),
-                                Expanded(child: Text(_saveError!, style: TextStyle(color: AppColors.error))),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: AppSpacing.lg),
-                        ],
 
-                        const InfoChip(label: 'AI Generated', color: AppColors.primary),
-                        
-                        const SectionHeader(
-                          title: 'Summary',
-                          padding: EdgeInsets.only(top: AppSpacing.xl, bottom: AppSpacing.sm),
-                        ),
-                        TextField(
-                          controller: _summaryController,
-                          maxLines: null,
-                          maxLength: 500,
-                          style: Theme.of(context).textTheme.bodyMedium,
-                          decoration: InputDecoration(
-                            filled: true,
-                            fillColor: AppColors.surfaceElevated,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide: BorderSide.none,
-                            ),
-                            contentPadding: const EdgeInsets.all(AppSpacing.md),
-                          ),
-                        ),
-
-                        const SectionHeader(
-                          title: 'Action Items',
-                          padding: EdgeInsets.only(top: AppSpacing.lg, bottom: AppSpacing.md),
-                        ),
-                        ..._taskControllers.asMap().entries.map((entry) {
-                          final idx = entry.key;
-                          final controller = entry.value;
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                            child: Row(
-                              children: [
-                                const Icon(LucideIcons.circle, size: 20, color: AppColors.textTertiary),
-                                const SizedBox(width: AppSpacing.md),
-                                Expanded(
-                                  child: TextField(
-                                    controller: controller,
-                                    maxLength: 200,
-                                    buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
-                                    decoration: InputDecoration(
-                                      isDense: true,
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(8),
-                                        borderSide: BorderSide.none,
-                                      ),
-                                      filled: true,
-                                      fillColor: AppColors.surfaceElevated,
-                                      contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-                                    ),
+                    const SectionHeader(
+                      title: 'Action Items',
+                      padding: EdgeInsets.only(top: AppSpacing.lg, bottom: AppSpacing.md),
+                    ),
+                    ..._taskControllers.asMap().entries.map((entry) {
+                      final idx = entry.key;
+                      final controller = entry.value;
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                        child: Row(
+                          children: [
+                            const Icon(LucideIcons.circle, size: 20, color: AppColors.textTertiary),
+                            const SizedBox(width: AppSpacing.md),
+                            Expanded(
+                              child: TextField(
+                                controller: controller,
+                                maxLength: 200,
+                                buildCounter: (context, {required currentLength, required isFocused, maxLength}) =>
+                                    null,
+                                decoration: InputDecoration(
+                                  isDense: true,
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                    borderSide: BorderSide.none,
+                                  ),
+                                  filled: true,
+                                  fillColor: AppColors.surfaceElevated,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: AppSpacing.md,
+                                    vertical: AppSpacing.sm,
                                   ),
                                 ),
-                                IconButton(
-                                  icon: const Icon(LucideIcons.x, size: 18, color: AppColors.textTertiary),
-                                  onPressed: () {
-                                    setState(() {
-                                      _taskControllers.removeAt(idx).dispose();
-                                    });
-                                  },
-                                ),
-                              ],
+                              ),
                             ),
-                          );
-                        }),
-                        TextButton.icon(
-                          onPressed: () {
-                            setState(() {
-                              _taskControllers.add(TextEditingController());
-                            });
-                          },
-                          icon: const Icon(LucideIcons.plus, size: 16),
-                          label: const Text('Add Task'),
-                        ),
-
-                        const SectionHeader(
-                          title: 'Suggested Reminder',
-                          padding: EdgeInsets.only(top: AppSpacing.xl, bottom: AppSpacing.md),
-                        ),
-                        Container(
-                          decoration: BoxDecoration(
-                            color: AppColors.surface,
-                            borderRadius: AppRadius.card,
-                            border: Border.all(color: AppColors.divider),
-                          ),
-                          child: ListTile(
-                            leading: const Icon(LucideIcons.calendarClock, color: AppColors.primary, size: 20),
-                            title: TextField(
-                              controller: _reminderTitleController,
-                              decoration: const InputDecoration.collapsed(hintText: 'Reminder title'),
-                              style: Theme.of(context).textTheme.bodyLarge,
-                            ),
-                            subtitle: Text(DateFormat.yMMMd().add_jm().format(_reminderDateTime), style: Theme.of(context).textTheme.bodySmall),
-                            trailing: Switch(
-                              value: _includeReminder,
-                              activeThumbColor: AppColors.primary,
-                              onChanged: (val) {
+                            IconButton(
+                              icon: const Icon(LucideIcons.x, size: 18, color: AppColors.textTertiary),
+                              onPressed: () {
                                 setState(() {
-                                  _includeReminder = val;
+                                  _taskControllers.removeAt(idx).dispose();
                                 });
                               },
                             ),
-                            onTap: _pickDateTime,
-                          ),
+                          ],
                         ),
-
-                        const SizedBox(height: AppSpacing.xxxl * 2),
-                      ],
+                      );
+                    }),
+                    TextButton.icon(
+                      onPressed: () {
+                        setState(() {
+                          _taskControllers.add(TextEditingController());
+                        });
+                      },
+                      icon: const Icon(LucideIcons.plus, size: 16),
+                      label: const Text('Add Task'),
                     ),
-                  ),
+
+                    const SectionHeader(
+                      title: 'Suggested Reminder',
+                      padding: EdgeInsets.only(top: AppSpacing.xl, bottom: AppSpacing.md),
+                    ),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: AppRadius.card,
+                        border: Border.all(color: AppColors.divider),
+                      ),
+                      child: ListTile(
+                        leading: const Icon(LucideIcons.calendarClock, color: AppColors.primary, size: 20),
+                        title: TextField(
+                          controller: _reminderTitleController,
+                          decoration: const InputDecoration.collapsed(hintText: 'Reminder title'),
+                          style: Theme.of(context).textTheme.bodyLarge,
+                        ),
+                        subtitle: Text(
+                          DateFormat.yMMMd().add_jm().format(_reminderDateTime),
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                        trailing: Switch(
+                          value: _includeReminder,
+                          activeThumbColor: AppColors.primary,
+                          onChanged: (val) {
+                            setState(() {
+                              _includeReminder = val;
+                            });
+                          },
+                        ),
+                        onTap: _pickDateTime,
+                      ),
+                    ),
+
+                    const SizedBox(height: AppSpacing.xxxl * 2),
+                  ],
+                ),
+              ),
       ),
-      bottomNavigationBar: !_isProcessing && _aiError == null ? SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.lg),
-          child: ElevatedButton(
-            onPressed: _isSaving ? null : _saveToProfile,
-            child: _isSaving 
-              ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-              : Text(_saveError != null ? 'Retry Save' : 'Save to Profile'),
-          ),
-        ),
-      ) : null,
+      bottomNavigationBar: !_isProcessing && _aiError == null
+          ? SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.lg),
+                child: ElevatedButton(
+                  onPressed: _isSaving ? null : _saveToProfile,
+                  child: _isSaving
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : Text(_saveError != null ? 'Retry Save' : 'Save to Profile'),
+                ),
+              ),
+            )
+          : null,
     );
   }
 }

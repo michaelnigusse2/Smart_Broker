@@ -17,18 +17,18 @@ class OverlayGateway {
 
   /// Full-width window at the top of the screen. [heightPx] is in physical pixels.
   Future<void> show({required int heightPx}) => FlutterOverlayWindow.showOverlay(
-        height: heightPx,
-        width: WindowSize.matchParent,
-        alignment: OverlayAlignment.topCenter,
-        // focusPointer lets the note field receive keyboard input while
-        // touches outside the window still reach the dialer.
-        flag: OverlayFlag.focusPointer,
-        enableDrag: true,
-        positionGravity: PositionGravity.none,
-        visibility: NotificationVisibility.visibilityPrivate,
-        overlayTitle: 'SmartBroker',
-        overlayContent: 'Call notes',
-      );
+    height: heightPx,
+    width: WindowSize.matchParent,
+    alignment: OverlayAlignment.topCenter,
+    // focusPointer lets the note field receive keyboard input while
+    // touches outside the window still reach the dialer.
+    flag: OverlayFlag.focusPointer,
+    enableDrag: true,
+    positionGravity: PositionGravity.none,
+    visibility: NotificationVisibility.visibilityPrivate,
+    overlayTitle: 'SmartBroker',
+    overlayContent: 'Call notes',
+  );
 
   Future<void> shareData(Object data) async {
     await FlutterOverlayWindow.shareData(data);

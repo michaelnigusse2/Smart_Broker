@@ -100,11 +100,13 @@ void _listenToOverlayOnce() {
 @pragma('vm:entry-point')
 void overlayMain() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(MaterialApp(
-    debugShowCheckedModeBanner: false,
-    theme: AppTheme.lightTheme,
-    home: const CallOverlayScreen(),
-  ));
+  runApp(
+    MaterialApp(
+      debugShowCheckedModeBanner: false,
+      theme: AppTheme.lightTheme,
+      home: const CallOverlayScreen(),
+    ),
+  );
 }
 
 /// Restarts call detection on launch if the user had turned it on.

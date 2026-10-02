@@ -74,9 +74,9 @@ class CallDetectionService {
   /// Stream of call events from the native side.
   /// Each event fires when a phone call ends.
   Stream<Map<String, dynamic>> get callEvents {
-    _callEventsStream ??= _eventChannel
-        .receiveBroadcastStream()
-        .map((event) => Map<String, dynamic>.from(event as Map));
+    _callEventsStream ??= _eventChannel.receiveBroadcastStream().map(
+      (event) => Map<String, dynamic>.from(event as Map),
+    );
     return _callEventsStream!;
   }
 }

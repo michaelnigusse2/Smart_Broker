@@ -34,8 +34,7 @@ class CallOverlayState {
     }
   }
 
-  static Future<void> write(Map<String, dynamic> state) =>
-      _prefs.setString(_stateKey, jsonEncode(state));
+  static Future<void> write(Map<String, dynamic> state) => _prefs.setString(_stateKey, jsonEncode(state));
 
   static Future<void> clear() => _prefs.remove(_stateKey);
 

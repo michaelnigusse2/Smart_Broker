@@ -8,16 +8,16 @@ import 'package:smart_broker/core/services/ai_service.dart';
 
 /// A chat-completions response whose message content is [content].
 http.Response _completion(String content) => http.Response(
-      jsonEncode({
-        'choices': [
-          {
-            'message': {'role': 'assistant', 'content': content}
-          }
-        ]
-      }),
-      200,
-      headers: {'content-type': 'application/json'},
-    );
+  jsonEncode({
+    'choices': [
+      {
+        'message': {'role': 'assistant', 'content': content},
+      },
+    ],
+  }),
+  200,
+  headers: {'content-type': 'application/json'},
+);
 
 const _validJson =
     '{"summary": "Wants a viewing.", "actionItems": ["Book viewing"], '
@@ -28,18 +28,18 @@ void main() {
   late List<http.Response> replies;
 
   MockClient client() => MockClient((request) async {
-        requests.add(request);
-        return replies.removeAt(0);
-      });
+    requests.add(request);
+    return replies.removeAt(0);
+  });
 
   Map<String, dynamic> body(int i) => jsonDecode(requests[i].body) as Map<String, dynamic>;
 
   Future<void> analyze(AiService service) => service.analyzeNote(
-        contactName: 'Test Client One',
-        rawNote: 'Viewing on Monday at 10',
-        previousNotes: 'Looked at a flat in March',
-        pendingTodos: '- Send floor plan',
-      );
+    contactName: 'Test Client One',
+    rawNote: 'Viewing on Monday at 10',
+    previousNotes: 'Looked at a flat in March',
+    pendingTodos: '- Send floor plan',
+  );
 
   setUp(() {
     requests = [];

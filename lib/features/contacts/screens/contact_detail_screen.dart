@@ -192,7 +192,7 @@ class _ContactDetailScreenState extends State<ContactDetailScreen> {
               ),
             ),
             const Divider(height: 1),
-            
+
             // Scrollable Content
             Expanded(
               child: SingleChildScrollView(
@@ -249,9 +249,9 @@ class _ContactDetailScreenState extends State<ContactDetailScreen> {
                                 onPressed: () async {
                                   await _todoRepo.insert(todo);
                                   _loadData();
-                                }
-                              )
-                            )
+                                },
+                              ),
+                            ),
                           );
                         },
                         onAdd: (title) async {
@@ -292,8 +292,8 @@ class _ContactDetailScreenState extends State<ContactDetailScreen> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
           Navigator.pushNamed(
-            context, 
-            AppRoutes.addNote, 
+            context,
+            AppRoutes.addNote,
             arguments: contact.id,
           ).then((_) => _loadData());
         },
@@ -447,7 +447,12 @@ class _NotesList extends StatelessWidget {
             );
           },
           child: Padding(
-            padding: const EdgeInsets.only(left: AppSpacing.xxl, right: AppSpacing.lg, bottom: AppSpacing.xl, top: AppSpacing.sm),
+            padding: const EdgeInsets.only(
+              left: AppSpacing.xxl,
+              right: AppSpacing.lg,
+              bottom: AppSpacing.xl,
+              top: AppSpacing.sm,
+            ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -547,7 +552,7 @@ class _TodosList extends StatefulWidget {
 
   const _TodosList({
     required this.contactId,
-    required this.todos, 
+    required this.todos,
     required this.onToggle,
     required this.onEdit,
     required this.onDelete,
@@ -569,27 +574,32 @@ class _TodosListState extends State<_TodosList> {
           if (widget.todos.isEmpty)
             Padding(
               padding: const EdgeInsets.only(bottom: AppSpacing.md),
-              child: Text('No tasks.', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary)),
+              child: Text(
+                'No tasks.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary),
+              ),
             )
           else
-            ...widget.todos.map((todo) => Dismissible(
-              key: Key(todo.id),
-              direction: DismissDirection.endToStart,
-              background: Container(
-                alignment: Alignment.centerRight,
-                padding: const EdgeInsets.only(right: AppSpacing.md),
-                color: AppColors.error,
-                child: const Icon(LucideIcons.trash2, color: Colors.white),
+            ...widget.todos.map(
+              (todo) => Dismissible(
+                key: Key(todo.id),
+                direction: DismissDirection.endToStart,
+                background: Container(
+                  alignment: Alignment.centerRight,
+                  padding: const EdgeInsets.only(right: AppSpacing.md),
+                  color: AppColors.error,
+                  child: const Icon(LucideIcons.trash2, color: Colors.white),
+                ),
+                onDismissed: (_) => widget.onDelete(todo),
+                child: TodoTile(
+                  todo: todo,
+                  onChanged: (val) => widget.onToggle(todo.id),
+                  onEdit: (newTitle) => widget.onEdit(todo, newTitle),
+                  onDelete: () => widget.onDelete(todo),
+                ),
               ),
-              onDismissed: (_) => widget.onDelete(todo),
-              child: TodoTile(
-                todo: todo,
-                onChanged: (val) => widget.onToggle(todo.id),
-                onEdit: (newTitle) => widget.onEdit(todo, newTitle),
-                onDelete: () => widget.onDelete(todo),
-              ),
-            )),
-            
+            ),
+
           const SizedBox(height: AppSpacing.sm),
           Align(
             alignment: Alignment.centerLeft,
@@ -676,9 +686,7 @@ class _CallsList extends StatelessWidget {
                 SizedBox(
                   width: 50,
                   child: Text(
-                    call.duration.inMinutes > 0
-                      ? '${call.duration.inMinutes}m'
-                      : '${call.duration.inSeconds}s',
+                    call.duration.inMinutes > 0 ? '${call.duration.inMinutes}m' : '${call.duration.inSeconds}s',
                     style: theme.textTheme.labelMedium,
                     textAlign: TextAlign.end,
                   ),
@@ -702,7 +710,10 @@ class _RemindersList extends StatelessWidget {
     if (reminders.isEmpty) {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-        child: Text('No reminders.', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary)),
+        child: Text(
+          'No reminders.',
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary),
+        ),
       );
     }
 

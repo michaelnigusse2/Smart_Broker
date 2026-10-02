@@ -11,7 +11,8 @@ enum OverlayMode {
   all,
 
   /// Never.
-  off;
+  off
+  ;
 
   static OverlayMode? byName(String? name) {
     for (final mode in values) {
@@ -28,6 +29,7 @@ class SettingsService {
 
   static const String _keyPromptAfterCall = 'prompt_after_call';
   static const String _keyMinCallDuration = 'min_call_duration_seconds';
+
   /// Legacy on/off switch, read once to migrate to [_keyOverlayMode].
   static const String _keyShowCallOverlay = 'show_call_overlay';
   static const String _keyOverlayMode = 'overlay_mode';

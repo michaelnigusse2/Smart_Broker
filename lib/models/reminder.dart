@@ -1,22 +1,22 @@
 class Reminder {
   final String id;
   final String contactId;
-  final String? noteId;            // NEW
+  final String? noteId; // NEW
   final String title;
-  final String description;        // NEW
+  final String description; // NEW
   final DateTime dateTime;
-  final bool completed;            // NEW
-  final DateTime createdAt;        // NEW
+  final bool completed; // NEW
+  final DateTime createdAt; // NEW
 
   const Reminder({
     required this.id,
     required this.contactId,
-    this.noteId,                   // NEW
+    this.noteId, // NEW
     required this.title,
-    this.description = '',         // NEW
+    this.description = '', // NEW
     required this.dateTime,
-    this.completed = false,        // NEW
-    required this.createdAt,       // NEW
+    this.completed = false, // NEW
+    required this.createdAt, // NEW
   });
 
   Map<String, dynamic> toMap() {

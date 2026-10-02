@@ -98,7 +98,7 @@ class _PhoneContactDetailScreenState extends State<PhoneContactDetailScreen> {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               const SizedBox(height: AppSpacing.xxl),
-              
+
               // Avatar
               CircleAvatar(
                 radius: 48,
@@ -110,7 +110,7 @@ class _PhoneContactDetailScreenState extends State<PhoneContactDetailScreen> {
                 ),
               ),
               const SizedBox(height: AppSpacing.lg),
-              
+
               // Name
               Text(
                 contact.name,
@@ -121,7 +121,7 @@ class _PhoneContactDetailScreenState extends State<PhoneContactDetailScreen> {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: AppSpacing.xs),
-              
+
               // Phone
               Text(
                 contact.phoneNumber,
@@ -129,9 +129,9 @@ class _PhoneContactDetailScreenState extends State<PhoneContactDetailScreen> {
                   color: AppColors.textSecondary,
                 ),
               ),
-              
+
               const SizedBox(height: AppSpacing.xxxl),
-              
+
               // Info Card
               Container(
                 padding: const EdgeInsets.all(AppSpacing.lg),
@@ -159,9 +159,9 @@ class _PhoneContactDetailScreenState extends State<PhoneContactDetailScreen> {
                   ],
                 ),
               ),
-              
+
               const SizedBox(height: AppSpacing.xxxl),
-              
+
               // CTA Button
               SizedBox(
                 width: double.infinity,

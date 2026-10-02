@@ -37,7 +37,7 @@ class TodoTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+
     return Container(
       margin: const EdgeInsets.only(bottom: AppSpacing.xs),
       decoration: BoxDecoration(
@@ -93,13 +93,12 @@ class TodoTile extends StatelessWidget {
                 ),
               )
             : null,
-        trailing: isBulkMode 
-            ? null 
+        trailing: isBulkMode
+            ? null
             : Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (showChevron)
-                    const Icon(LucideIcons.chevronRight, size: 16, color: AppColors.textTertiary),
+                  if (showChevron) const Icon(LucideIcons.chevronRight, size: 16, color: AppColors.textTertiary),
                   if (onDelete != null || onEdit != null)
                     PopupMenuButton<String>(
                       icon: const Icon(LucideIcons.moreVertical, size: 16, color: AppColors.textTertiary),

@@ -34,15 +34,14 @@ void main() {
       CallType type = CallType.incoming,
       int seconds = 60,
       bool known = true,
-    }) =>
-        shouldPromptAfterCall(
-          promptEnabled: enabled,
-          mode: mode,
-          type: type,
-          duration: Duration(seconds: seconds),
-          minDuration: const Duration(seconds: 10),
-          isKnownContact: known,
-        );
+    }) => shouldPromptAfterCall(
+      promptEnabled: enabled,
+      mode: mode,
+      type: type,
+      duration: Duration(seconds: seconds),
+      minDuration: const Duration(seconds: 10),
+      isKnownContact: known,
+    );
 
     test('known contact, long enough call', () => expect(prompt(), isTrue));
     test('setting off', () => expect(prompt(enabled: false), isFalse));

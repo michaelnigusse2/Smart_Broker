@@ -44,14 +44,15 @@ class TodoRepository {
       TaskSort.contact => 'contactName COLLATE NOCASE ASC, t.createdAt DESC',
     };
 
-    final query = '''
+    final query =
+        '''
       SELECT t.*, c.name AS contactName
       FROM todos t
       INNER JOIN contacts c ON t.contactId = c.id
       ${where.isNotEmpty ? 'WHERE $where' : ''}
       ORDER BY $orderBy
     ''';
-    
+
     final maps = await db.rawQuery(query, whereArgs);
     return maps.map((m) {
       final mapCopy = Map<String, dynamic>.from(m);
@@ -95,8 +96,7 @@ class TodoRepository {
     return maps.map((m) => TodoItem.fromMap(m)).toList();
   }
 
-  Future<void> _updateContactTasksCount(DatabaseExecutor db, String contactId) =>
-      recountForContact(db, contactId);
+  Future<void> _updateContactTasksCount(DatabaseExecutor db, String contactId) => recountForContact(db, contactId);
 
   /// Recomputes `contacts.pendingTasksCount`. Takes an executor so it can run
   /// inside a transaction.
@@ -108,7 +108,7 @@ class TodoRepository {
       whereArgs: [contactId],
     );
     final count = Sqflite.firstIntValue(countMaps) ?? 0;
-    
+
     await db.update(
       'contacts',
       {'pendingTasksCount': count},

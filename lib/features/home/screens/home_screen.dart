@@ -83,8 +83,7 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    final recentContacts = List.of(_contacts)
-      ..sort((a, b) => b.lastInteraction.compareTo(a.lastInteraction));
+    final recentContacts = List.of(_contacts)..sort((a, b) => b.lastInteraction.compareTo(a.lastInteraction));
     final displayTodos = _pendingTodos.take(3).toList();
     final displayReminders = _upcomingReminders.take(2).toList();
     final theme = Theme.of(context);
@@ -172,25 +171,26 @@ class _HomeScreenState extends State<HomeScreen> {
                         actionLabel: 'See all',
                       ),
                       ...recentContacts.take(3).map(
-                            (contact) {
-                              final hasOverdue = _pendingTodos.any((t) => 
-                                  t.contactId == contact.id && 
-                                  t.createdAt.isBefore(DateTime.now().subtract(const Duration(days: 7)))
-                              );
-                              return _ContactRow(
-                                name: contact.name,
-                                phone: contact.phoneNumber,
-                                lastSeen: contact.lastInteraction,
-                                hasTasks: contact.pendingTasksCount > 0,
-                                hasOverdueTasks: hasOverdue,
-                                onTap: () => Navigator.pushNamed(
-                                  context,
-                                  AppRoutes.contactDetail,
-                                  arguments: contact.id, // Pass ID
-                                ).then((_) => _loadData()), // Reload when popping back
-                              );
-                            },
-                          ),
+                        (contact) {
+                          final hasOverdue = _pendingTodos.any(
+                            (t) =>
+                                t.contactId == contact.id &&
+                                t.createdAt.isBefore(DateTime.now().subtract(const Duration(days: 7))),
+                          );
+                          return _ContactRow(
+                            name: contact.name,
+                            phone: contact.phoneNumber,
+                            lastSeen: contact.lastInteraction,
+                            hasTasks: contact.pendingTasksCount > 0,
+                            hasOverdueTasks: hasOverdue,
+                            onTap: () => Navigator.pushNamed(
+                              context,
+                              AppRoutes.contactDetail,
+                              arguments: contact.id, // Pass ID
+                            ).then((_) => _loadData()), // Reload when popping back
+                          );
+                        },
+                      ),
 
                       SectionHeader(
                         title: 'Pending Tasks',
@@ -199,7 +199,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       ...displayTodos.map(
                         (todo) => TodoTile(
-                          todo: todo, 
+                          todo: todo,
                           showChevron: true,
                           onChanged: (val) async {
                             await _todoRepo.toggleCompleted(todo.id);

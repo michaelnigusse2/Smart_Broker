@@ -37,7 +37,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
   final TextEditingController _searchController = TextEditingController();
   final ContactMergeService _mergeService = ContactMergeService();
   final ReminderRepository _reminderRepo = ReminderRepository();
-  
+
   List<UnifiedContact> _allContacts = [];
   Set<String> _overdueContactIds = {};
   bool _isLoading = true;
@@ -84,35 +84,31 @@ class _ContactsScreenState extends State<ContactsScreen> {
   List<UnifiedContact> get _filteredContacts {
     // 1. Apply search
     var contacts = _allContacts.where((c) {
-      return c.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-          c.phoneNumber.contains(_searchQuery);
+      return c.name.toLowerCase().contains(_searchQuery.toLowerCase()) || c.phoneNumber.contains(_searchQuery);
     }).toList();
 
     // 2. Apply filter
     switch (_activeFilter) {
       case ContactFilter.all:
-        // Already sorted alphabetically by ContactMergeService, 
+        // Already sorted alphabetically by ContactMergeService,
         // but let's keep the existing logic of recent first for 'All'
         // Wait, the plan says we merge and sort alphabetically. Let's just return them.
         break;
       case ContactFilter.recent:
         // Interacted within the last 7 days
         final cutoff = DateTime.now().subtract(const Duration(days: 7));
-        contacts = contacts
-            .where((c) => c.lastInteraction.isAfter(cutoff) && c.lastInteraction.millisecondsSinceEpoch > 0)
-            .toList()
-          ..sort((a, b) => b.lastInteraction.compareTo(a.lastInteraction));
+        contacts =
+            contacts
+                .where((c) => c.lastInteraction.isAfter(cutoff) && c.lastInteraction.millisecondsSinceEpoch > 0)
+                .toList()
+              ..sort((a, b) => b.lastInteraction.compareTo(a.lastInteraction));
         break;
       case ContactFilter.hasTasks:
-        contacts = contacts
-            .where((c) => c.pendingTasksCount > 0)
-            .toList()
+        contacts = contacts.where((c) => c.pendingTasksCount > 0).toList()
           ..sort((a, b) => b.pendingTasksCount.compareTo(a.pendingTasksCount));
         break;
       case ContactFilter.overdue:
-        contacts = contacts
-            .where((c) => _overdueContactIds.contains(c.id))
-            .toList();
+        contacts = contacts.where((c) => _overdueContactIds.contains(c.id)).toList();
         break;
     }
 
@@ -164,8 +160,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
           children: [
             // ─── Search ─────────────────────────────────────────────
             Padding(
-              padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.sm),
+              padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.sm),
               child: TextField(
                 controller: _searchController,
                 decoration: InputDecoration(
@@ -192,8 +187,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide:
-                        const BorderSide(color: AppColors.primary, width: 1.5),
+                    borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
                   ),
                   contentPadding: const EdgeInsets.symmetric(vertical: 0),
                 ),
@@ -204,8 +198,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
             // ─── Filters ────────────────────────────────────────────
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.sm),
+              padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.sm),
               child: Row(
                 children: ContactFilter.values.map((filter) {
                   final isSelected = _activeFilter == filter;
@@ -216,12 +209,9 @@ class _ContactsScreenState extends State<ContactsScreen> {
                       onTap: () => setState(() => _activeFilter = filter),
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 180),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.md, vertical: 7),
+                        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 7),
                         decoration: BoxDecoration(
-                          color: isSelected
-                              ? AppColors.textPrimary
-                              : AppColors.surfaceElevated,
+                          color: isSelected ? AppColors.textPrimary : AppColors.surfaceElevated,
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Row(
@@ -232,21 +222,17 @@ class _ContactsScreenState extends State<ContactsScreen> {
                               style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w500,
-                                color: isSelected
-                                    ? Colors.white
-                                    : AppColors.textSecondary,
+                                color: isSelected ? Colors.white : AppColors.textSecondary,
                               ),
                             ),
                             if (badge != null && badge > 0) ...[
                               const SizedBox(width: 5),
                               Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 5, vertical: 1),
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                                 decoration: BoxDecoration(
                                   color: isSelected
                                       ? Colors.white.withValues(alpha: 0.25)
-                                      : AppColors.primary
-                                          .withValues(alpha: 0.15),
+                                      : AppColors.primary.withValues(alpha: 0.15),
                                   borderRadius: BorderRadius.circular(10),
                                 ),
                                 child: Text(
@@ -254,9 +240,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
                                   style: TextStyle(
                                     fontSize: 10,
                                     fontWeight: FontWeight.w700,
-                                    color: isSelected
-                                        ? Colors.white
-                                        : AppColors.primary,
+                                    color: isSelected ? Colors.white : AppColors.primary,
                                   ),
                                 ),
                               ),
@@ -272,14 +256,10 @@ class _ContactsScreenState extends State<ContactsScreen> {
 
             // ─── Result count ────────────────────────────────────────
             Padding(
-              padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.sm),
+              padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.sm),
               child: Text(
                 '${filtered.length} contact${filtered.length == 1 ? '' : 's'}',
-                style: Theme.of(context)
-                    .textTheme
-                    .labelMedium
-                    ?.copyWith(color: AppColors.textTertiary),
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(color: AppColors.textTertiary),
               ),
             ),
 
@@ -290,8 +270,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
                   : RefreshIndicator(
                       onRefresh: _loadData,
                       child: ListView.builder(
-                        padding: const EdgeInsets.fromLTRB(
-                            AppSpacing.lg, 0, AppSpacing.lg, 100),
+                        padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 0, AppSpacing.lg, 100),
                         itemCount: filtered.length,
                         itemBuilder: (context, index) {
                           return ContactCard(
@@ -299,7 +278,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
                             onTap: () {
                               if (filtered[index].isSmartBrokerContact) {
                                 Navigator.pushNamed(
-                                  context, 
+                                  context,
                                   AppRoutes.contactDetail,
                                   arguments: filtered[index].id,
                                 ).then((_) => _loadData());
@@ -360,10 +339,7 @@ class _EmptyState extends StatelessWidget {
           const SizedBox(height: AppSpacing.md),
           Text(
             message,
-            style: Theme.of(context)
-                .textTheme
-                .bodyMedium
-                ?.copyWith(color: AppColors.textSecondary),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary),
           ),
         ],
       ),

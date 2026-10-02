@@ -65,6 +65,5 @@ class AiProvider {
   static const all = [groq, openRouter, nvidia];
   static const fallback = groq;
 
-  static AiProvider byId(String? id) =>
-      all.firstWhere((p) => p.id == id, orElse: () => fallback);
+  static AiProvider byId(String? id) => all.firstWhere((p) => p.id == id, orElse: () => fallback);
 }

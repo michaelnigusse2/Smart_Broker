@@ -18,7 +18,7 @@ class _NotesListScreenState extends State<NotesListScreen> {
   final NoteRepository _noteRepo = NoteRepository();
   List<NoteWithContact> _allNotes = [];
   List<NoteWithContact> _filteredNotes = [];
-  
+
   bool _isLoading = true;
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
@@ -168,129 +168,140 @@ class _NotesListScreenState extends State<NotesListScreen> {
               child: _isLoading
                   ? const Center(child: CircularProgressIndicator())
                   : _filteredNotes.isEmpty
-                      ? Center(
-                          child: Text(
-                            _searchQuery.isNotEmpty ? 'No notes found' : 'No notes yet',
-                            style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: AppColors.textSecondary),
-                          ),
-                        )
-                      : RefreshIndicator(
-                          onRefresh: _loadNotes,
-                          child: ListView.builder(
-                            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
-                            itemCount: _buildListItems().length,
-                            itemBuilder: (context, index) {
-                              final item = _buildListItems()[index];
-                              
-                              if (item is String) {
-                                // Header
-                                return Padding(
-                                  padding: const EdgeInsets.only(top: AppSpacing.lg, bottom: AppSpacing.sm, left: AppSpacing.xs),
-                                  child: Text(
-                                    item,
-                                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                      color: AppColors.textTertiary,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                );
-                              }
+                  ? Center(
+                      child: Text(
+                        _searchQuery.isNotEmpty ? 'No notes found' : 'No notes yet',
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: AppColors.textSecondary),
+                      ),
+                    )
+                  : RefreshIndicator(
+                      onRefresh: _loadNotes,
+                      child: ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
+                        itemCount: _buildListItems().length,
+                        itemBuilder: (context, index) {
+                          final item = _buildListItems()[index];
 
-                              // Note Card
-                              final noteContact = item as NoteWithContact;
-                              final note = noteContact.note;
+                          if (item is String) {
+                            // Header
+                            return Padding(
+                              padding: const EdgeInsets.only(
+                                top: AppSpacing.lg,
+                                bottom: AppSpacing.sm,
+                                left: AppSpacing.xs,
+                              ),
+                              child: Text(
+                                item,
+                                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                  color: AppColors.textTertiary,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            );
+                          }
 
-                              return Padding(
-                                padding: const EdgeInsets.only(bottom: AppSpacing.md),
-                                child: Dismissible(
-                                  key: Key(note.id),
-                                  direction: DismissDirection.endToStart,
-                                  confirmDismiss: (_) => _confirmDelete(),
-                                  onDismissed: (_) async {
-                                    await _noteRepo.delete(note.id);
-                                    _loadNotes(); // Refresh list silently
-                                  },
-                                  background: Container(
-                                    decoration: BoxDecoration(
-                                      color: AppColors.error,
-                                      borderRadius: AppRadius.card,
-                                    ),
-                                    alignment: Alignment.centerRight,
-                                    padding: const EdgeInsets.only(right: AppSpacing.xl),
-                                    child: const Icon(LucideIcons.trash2, color: Colors.white),
-                                  ),
-                                  child: InkWell(
-                                    onTap: () {
-                                      Navigator.pushNamed(
-                                        context,
-                                        AppRoutes.noteDetail,
-                                        arguments: note.id,
-                                      ).then((_) => _loadNotes());
-                                    },
+                          // Note Card
+                          final noteContact = item as NoteWithContact;
+                          final note = noteContact.note;
+
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: AppSpacing.md),
+                            child: Dismissible(
+                              key: Key(note.id),
+                              direction: DismissDirection.endToStart,
+                              confirmDismiss: (_) => _confirmDelete(),
+                              onDismissed: (_) async {
+                                await _noteRepo.delete(note.id);
+                                _loadNotes(); // Refresh list silently
+                              },
+                              background: Container(
+                                decoration: BoxDecoration(
+                                  color: AppColors.error,
+                                  borderRadius: AppRadius.card,
+                                ),
+                                alignment: Alignment.centerRight,
+                                padding: const EdgeInsets.only(right: AppSpacing.xl),
+                                child: const Icon(LucideIcons.trash2, color: Colors.white),
+                              ),
+                              child: InkWell(
+                                onTap: () {
+                                  Navigator.pushNamed(
+                                    context,
+                                    AppRoutes.noteDetail,
+                                    arguments: note.id,
+                                  ).then((_) => _loadNotes());
+                                },
+                                borderRadius: AppRadius.card,
+                                child: Container(
+                                  padding: const EdgeInsets.all(AppSpacing.lg),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.surfaceElevated,
                                     borderRadius: AppRadius.card,
-                                    child: Container(
-                                      padding: const EdgeInsets.all(AppSpacing.lg),
-                                      decoration: BoxDecoration(
-                                        color: AppColors.surfaceElevated,
-                                        borderRadius: AppRadius.card,
-                                      ),
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
                                         children: [
-                                          Row(
-                                            children: [
-                                              CircleAvatar(
-                                                radius: 12,
-                                                backgroundColor: AppColors.primary.withValues(alpha: 0.1),
-                                                foregroundColor: AppColors.primary,
-                                                child: Text(
-                                                  noteContact.contactInitials,
-                                                  style: Theme.of(context).textTheme.labelSmall?.copyWith(fontSize: 10, fontWeight: FontWeight.bold),
-                                                ),
+                                          CircleAvatar(
+                                            radius: 12,
+                                            backgroundColor: AppColors.primary.withValues(alpha: 0.1),
+                                            foregroundColor: AppColors.primary,
+                                            child: Text(
+                                              noteContact.contactInitials,
+                                              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.bold,
                                               ),
-                                              const SizedBox(width: AppSpacing.sm),
-                                              Expanded(
-                                                child: Text(
-                                                  noteContact.contactName,
-                                                  style: Theme.of(context).textTheme.titleMedium,
-                                                  maxLines: 1,
-                                                  overflow: TextOverflow.ellipsis,
-                                                ),
-                                              ),
-                                              Text(
-                                                _formatTime(note.createdAt),
-                                                style: Theme.of(context).textTheme.labelSmall?.copyWith(color: AppColors.textTertiary),
-                                              ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: AppSpacing.md),
-                                          Text(
-                                            note.aiSummary.isEmpty ? 'Not processed by AI yet' : note.aiSummary,
-                                            style: note.aiSummary.isEmpty
-                                                ? Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.textTertiary)
-                                                : Theme.of(context).textTheme.bodyMedium,
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                          const SizedBox(height: AppSpacing.sm),
-                                          Text(
-                                            '"${note.rawText}"',
-                                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                              fontStyle: FontStyle.italic,
-                                              color: AppColors.textSecondary,
                                             ),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          const SizedBox(width: AppSpacing.sm),
+                                          Expanded(
+                                            child: Text(
+                                              noteContact.contactName,
+                                              style: Theme.of(context).textTheme.titleMedium,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                          Text(
+                                            _formatTime(note.createdAt),
+                                            style: Theme.of(
+                                              context,
+                                            ).textTheme.labelSmall?.copyWith(color: AppColors.textTertiary),
                                           ),
                                         ],
                                       ),
-                                    ),
+                                      const SizedBox(height: AppSpacing.md),
+                                      Text(
+                                        note.aiSummary.isEmpty ? 'Not processed by AI yet' : note.aiSummary,
+                                        style: note.aiSummary.isEmpty
+                                            ? Theme.of(
+                                                context,
+                                              ).textTheme.bodyMedium?.copyWith(color: AppColors.textTertiary)
+                                            : Theme.of(context).textTheme.bodyMedium,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: AppSpacing.sm),
+                                      Text(
+                                        '"${note.rawText}"',
+                                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                          fontStyle: FontStyle.italic,
+                                          color: AppColors.textSecondary,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
                                   ),
                                 ),
-                              );
-                            },
-                          ),
-                        ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
             ),
           ],
         ),

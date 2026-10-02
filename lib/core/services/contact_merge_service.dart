@@ -9,14 +9,14 @@ class ContactMergeService {
   final PhoneContactService _phoneService;
 
   ContactMergeService({ContactRepository? contactRepo, PhoneContactService? phoneService})
-      : _contactRepo = contactRepo ?? ContactRepository(),
-        _phoneService = phoneService ?? PhoneContactService();
+    : _contactRepo = contactRepo ?? ContactRepository(),
+      _phoneService = phoneService ?? PhoneContactService();
 
   Future<List<UnifiedContact>> getUnifiedContacts() async {
     // 1. Fetch from both sources
     final smartContacts = await _contactRepo.getAll();
     List<PhoneContact> phoneContacts = [];
-    
+
     // We try to fetch phone contacts, but if permission is denied, it will just return empty or throw
     // The service handles asking for permission, but UI should ideally do it.
     try {
@@ -49,51 +49,57 @@ class ContactMergeService {
         // The same person is often saved several times (SIM, Google, WhatsApp).
         if (processedSmartContactIds.contains(match.id)) continue;
         // Merge! SmartBroker data wins for all fields
-        unifiedList.add(UnifiedContact(
-          id: match.id,
-          name: match.name, // SmartBroker name takes precedence
-          phoneNumber: match.phoneNumber,
-          email: match.email,
-          company: match.company,
-          role: match.role,
-          lastInteraction: match.lastInteraction,
-          pendingTasksCount: match.pendingTasksCount,
-          avatarUrl: match.avatarUrl,
-          isSmartBrokerContact: true,
-          isPhoneContact: true,
-        ));
+        unifiedList.add(
+          UnifiedContact(
+            id: match.id,
+            name: match.name, // SmartBroker name takes precedence
+            phoneNumber: match.phoneNumber,
+            email: match.email,
+            company: match.company,
+            role: match.role,
+            lastInteraction: match.lastInteraction,
+            pendingTasksCount: match.pendingTasksCount,
+            avatarUrl: match.avatarUrl,
+            isSmartBrokerContact: true,
+            isPhoneContact: true,
+          ),
+        );
         processedSmartContactIds.add(match.id);
       } else {
         // Phone-only contact (once per number, same as merged ones above)
         final key = PhoneContact.matchKey(pc.phoneNumber);
         if (key.isNotEmpty && !seenPhoneOnlyKeys.add(key)) continue;
-        unifiedList.add(UnifiedContact(
-          id: pc.id,
-          name: pc.displayName,
-          phoneNumber: pc.phoneNumber,
-          lastInteraction: DateTime.fromMillisecondsSinceEpoch(0),
-          isSmartBrokerContact: false,
-          isPhoneContact: true,
-        ));
+        unifiedList.add(
+          UnifiedContact(
+            id: pc.id,
+            name: pc.displayName,
+            phoneNumber: pc.phoneNumber,
+            lastInteraction: DateTime.fromMillisecondsSinceEpoch(0),
+            isSmartBrokerContact: false,
+            isPhoneContact: true,
+          ),
+        );
       }
     }
 
     // 4. Add remaining SmartBroker contacts (not in phone book)
     for (var sc in smartContacts) {
       if (!processedSmartContactIds.contains(sc.id)) {
-        unifiedList.add(UnifiedContact(
-          id: sc.id,
-          name: sc.name,
-          phoneNumber: sc.phoneNumber,
-          email: sc.email,
-          company: sc.company,
-          role: sc.role,
-          lastInteraction: sc.lastInteraction,
-          pendingTasksCount: sc.pendingTasksCount,
-          avatarUrl: sc.avatarUrl,
-          isSmartBrokerContact: true,
-          isPhoneContact: false,
-        ));
+        unifiedList.add(
+          UnifiedContact(
+            id: sc.id,
+            name: sc.name,
+            phoneNumber: sc.phoneNumber,
+            email: sc.email,
+            company: sc.company,
+            role: sc.role,
+            lastInteraction: sc.lastInteraction,
+            pendingTasksCount: sc.pendingTasksCount,
+            avatarUrl: sc.avatarUrl,
+            isSmartBrokerContact: true,
+            isPhoneContact: false,
+          ),
+        );
       }
     }
 

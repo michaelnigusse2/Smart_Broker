@@ -12,6 +12,8 @@ include: package:flutter_lints/flutter.yaml
 # `dart format` line length (the code base was written at ~120 columns).
 formatter:
   page_width: 120
+  # Keep hand-placed trailing commas (one argument per line in widget trees).
+  trailing_commas: preserve
 
 linter:
   # The lint rules applied to this project can be customized in the

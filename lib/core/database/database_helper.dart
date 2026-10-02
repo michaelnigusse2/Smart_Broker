@@ -14,8 +14,7 @@ class DatabaseHelper {
   @visibleForTesting
   static String? pathOverride;
 
-  static Future<String> _path() async =>
-      pathOverride ?? join(await getDatabasesPath(), _fileName);
+  static Future<String> _path() async => pathOverride ?? join(await getDatabasesPath(), _fileName);
 
   Future<Database> get database async {
     if (_database != null) return _database!;

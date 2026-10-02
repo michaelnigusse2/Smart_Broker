@@ -325,23 +325,27 @@ class CallMatchingService {
         AppLog.d(_tag, 'matched to contact ${match.id}');
       } else {
         // TODO: unknown numbers — decide between auto-creating and an "unassigned calls" inbox.
-        final id = await _contactRepo.insert(Contact(
-          id: '',
-          name: normalizedNumber,
-          phoneNumber: event.phoneNumber,
-          lastInteraction: event.timestamp,
-        ));
+        final id = await _contactRepo.insert(
+          Contact(
+            id: '',
+            name: normalizedNumber,
+            phoneNumber: event.phoneNumber,
+            lastInteraction: event.timestamp,
+          ),
+        );
         contact = (await _contactRepo.getById(id))!;
         AppLog.d(_tag, 'created contact $id for unknown caller');
       }
 
-      final callId = await _callRepo.insert(CallEntry(
-        id: '',
-        contactId: contact.id,
-        type: event.type,
-        duration: event.duration,
-        timestamp: event.timestamp,
-      ));
+      final callId = await _callRepo.insert(
+        CallEntry(
+          id: '',
+          contactId: contact.id,
+          type: event.type,
+          duration: event.duration,
+          timestamp: event.timestamp,
+        ),
+      );
       final callEntry = CallEntry(
         id: callId,
         contactId: contact.id,

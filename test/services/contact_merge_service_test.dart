@@ -30,12 +30,12 @@ class _FakePhoneContactService extends PhoneContactService {
 }
 
 Contact _crm(String id, String name, String phone) => Contact(
-      id: id,
-      name: name,
-      phoneNumber: phone,
-      lastInteraction: DateTime(2026, 1, 1),
-      pendingTasksCount: 2,
-    );
+  id: id,
+  name: name,
+  phoneNumber: phone,
+  lastInteraction: DateTime(2026, 1, 1),
+  pendingTasksCount: 2,
+);
 
 PhoneContact _phone(String id, String name, String phone) =>
     PhoneContact(id: id, displayName: name, phoneNumber: phone);

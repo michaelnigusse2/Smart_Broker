@@ -38,10 +38,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _callDetectionService = CallDetectionService();
   final _callMatchingService = CallMatchingService();
   final _settingsService = SettingsService();
-  
+
   bool _callPermissionGranted = false;
   bool _callServiceRunning = false;
-  
+
   bool _promptAfterCall = true;
   int _minCallDuration = 10;
   OverlayMode _overlayMode = OverlayMode.knownOnly;
@@ -78,7 +78,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final promptEnabled = await _settingsService.getPromptAfterCall();
     final minDuration = await _settingsService.getMinCallDuration();
     final overlayMode = await _settingsService.getOverlayMode();
-    
+
     bool overlayPerm = false;
     try {
       overlayPerm = await FlutterOverlayWindow.isPermissionGranted();
@@ -94,10 +94,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
 
     if (!_callDetectionService.isSupported) return;
-    
+
     final permGranted = await _callDetectionService.isPermissionGranted();
     final running = await _callDetectionService.isRunning();
-    
+
     if (mounted) {
       setState(() {
         _callPermissionGranted = permGranted;
@@ -197,9 +197,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     try {
       final added = await SeedData.loadDemoData();
       if (added) await NotificationService().rescheduleAll();
-      messenger.showSnackBar(SnackBar(
-        content: Text(added ? 'Demo data loaded' : 'Demo data is already loaded'),
-      ));
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(added ? 'Demo data loaded' : 'Demo data is already loaded'),
+        ),
+      );
     } catch (e, st) {
       AppLog.e('Settings', 'loading demo data failed', e, st);
       messenger.showSnackBar(SnackBar(content: Text('Could not load demo data: $e')));
@@ -278,12 +280,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                 final messenger = ScaffoldMessenger.of(context);
                 final overlayReady = await _callMatchingService.overlayWouldShowFor(number);
-                messenger.showSnackBar(SnackBar(
-                  content: Text(overlayReady
-                      ? 'Simulating $selectedType call — the overlay will appear now'
-                      : 'Simulating $selectedType call (no overlay: it is off, not permitted, '
-                          'or the number is not a contact)'),
-                ));
+                messenger.showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      overlayReady
+                          ? 'Simulating $selectedType call — the overlay will appear now'
+                          : 'Simulating $selectedType call (no overlay: it is off, not permitted, '
+                                'or the number is not a contact)',
+                    ),
+                  ),
+                );
                 await _callMatchingService.simulateCall(
                   phoneNumber: number,
                   type: callType,
@@ -329,7 +335,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               onTap: () {},
             ),
             const Divider(height: 1),
-            
+
             _buildSectionHeader(context, 'AI Integration'),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.md),
@@ -344,8 +350,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       border: OutlineInputBorder(),
                     ),
                     items: [
-                      for (final p in AiProvider.all)
-                        DropdownMenuItem(value: p, child: Text(p.name)),
+                      for (final p in AiProvider.all) DropdownMenuItem(value: p, child: Text(p.name)),
                     ],
                     onChanged: _isChecking ? null : _selectProvider,
                   ),
@@ -474,7 +479,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     },
                   ),
                 ),
-                
+
               if (_callPermissionGranted && _callServiceRunning) ...[
                 const Divider(),
                 SwitchListTile(
@@ -559,7 +564,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           if (!context.mounted) return;
                           setState(() => _overlayPermissionGranted = granted);
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text(granted ? 'Overlay permission granted' : 'Overlay permission denied')),
+                            SnackBar(
+                              content: Text(granted ? 'Overlay permission granted' : 'Overlay permission denied'),
+                            ),
                           );
                         } catch (e) {
                           if (!context.mounted) return;
@@ -597,7 +604,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               trailing: const Icon(LucideIcons.chevronRight, size: 20),
               onTap: () {},
             ),
-            
+
             const SizedBox(height: AppSpacing.xxl),
             const Center(
               child: Text(

@@ -19,7 +19,7 @@ class SectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+
     return Padding(
       padding: padding ?? const EdgeInsets.only(top: AppSpacing.xl, bottom: AppSpacing.md),
       child: Row(

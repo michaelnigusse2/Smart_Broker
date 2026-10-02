@@ -23,7 +23,7 @@ class CalendarScreen extends StatefulWidget {
 class _CalendarScreenState extends State<CalendarScreen> {
   final ReminderRepository _reminderRepo = ReminderRepository();
   final ContactRepository _contactRepo = ContactRepository();
-  
+
   DateTime _focusedDay = DateTime.now();
   DateTime _selectedDay = DateTime.now();
   List<Reminder> _allReminders = [];
@@ -139,7 +139,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 ],
               ),
             ),
-            
+
             // ─── Calendar ─────────────────────────────────────────────
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
@@ -171,8 +171,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 // ── Custom cell builders for full control ────────────
                 calendarBuilders: CalendarBuilders(
                   // Suppress default markers entirely
-                  markerBuilder: (context, day, events) =>
-                      const SizedBox.shrink(),
+                  markerBuilder: (context, day, events) => const SizedBox.shrink(),
 
                   defaultBuilder: (context, day, focusedDay) {
                     return _DayCell(
@@ -278,8 +277,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Padding(
-                      padding: const EdgeInsets.only(
-                          top: AppSpacing.xl, bottom: AppSpacing.md),
+                      padding: const EdgeInsets.only(top: AppSpacing.xl, bottom: AppSpacing.md),
                       child: Row(
                         children: [
                           Text(
@@ -289,8 +287,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           const SizedBox(width: AppSpacing.sm),
                           if (selectedReminders.isNotEmpty)
                             Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 2),
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                               decoration: BoxDecoration(
                                 color: AppColors.surfaceElevated,
                                 borderRadius: BorderRadius.circular(10),
@@ -321,8 +318,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                   const SizedBox(height: AppSpacing.md),
                                   Text(
                                     'No events today',
-                                    style: theme.textTheme.bodyMedium?.copyWith(
-                                        color: AppColors.textSecondary),
+                                    style: theme.textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary),
                                   ),
                                 ],
                               ),
@@ -373,9 +369,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
             final saved = await _reminderRepo.getById(id);
             final scheduled = saved != null && await NotificationService().scheduleReminder(saved);
             if (!scheduled) {
-              messenger.showSnackBar(const SnackBar(
-                content: Text('Reminder saved — no notification (the time has passed)'),
-              ));
+              messenger.showSnackBar(
+                const SnackBar(
+                  content: Text('Reminder saved — no notification (the time has passed)'),
+                ),
+              );
             }
             _loadData();
           },
@@ -440,13 +438,15 @@ class _AddReminderSheetState extends State<_AddReminderSheet> {
     if (!isSchedulable(finalDateTime) && !await confirmPastReminder(context)) return;
     if (!mounted) return;
 
-    widget.onSave(Reminder(
-      id: '',
-      contactId: _selectedContactId!,
-      title: _titleController.text.trim(),
-      dateTime: finalDateTime,
-      createdAt: DateTime.now(),
-    ));
+    widget.onSave(
+      Reminder(
+        id: '',
+        contactId: _selectedContactId!,
+        title: _titleController.text.trim(),
+        dateTime: finalDateTime,
+        createdAt: DateTime.now(),
+      ),
+    );
     Navigator.pop(context);
   }
 
@@ -466,7 +466,7 @@ class _AddReminderSheetState extends State<_AddReminderSheet> {
           children: [
             Text('Add Reminder', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: AppSpacing.xl),
-            
+
             TextField(
               controller: _titleController,
               autofocus: true,
@@ -477,7 +477,7 @@ class _AddReminderSheetState extends State<_AddReminderSheet> {
               ),
             ),
             const SizedBox(height: AppSpacing.lg),
-            
+
             Row(
               children: [
                 Expanded(
@@ -516,23 +516,27 @@ class _AddReminderSheetState extends State<_AddReminderSheet> {
               ],
             ),
             const SizedBox(height: AppSpacing.lg),
-            
+
             DropdownButtonFormField<String>(
               decoration: const InputDecoration(
                 labelText: 'Contact',
                 border: OutlineInputBorder(),
               ),
               initialValue: _selectedContactId,
-              items: widget.contacts.map((c) => DropdownMenuItem(
-                value: c.id,
-                child: Text(c.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-              )).toList(),
+              items: widget.contacts
+                  .map(
+                    (c) => DropdownMenuItem(
+                      value: c.id,
+                      child: Text(c.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    ),
+                  )
+                  .toList(),
               onChanged: (val) {
                 if (val != null) setState(() => _selectedContactId = val);
               },
             ),
             const SizedBox(height: AppSpacing.xl),
-            
+
             ElevatedButton(
               onPressed: _save,
               child: const Text('Save Reminder'),
@@ -607,14 +611,12 @@ class _DayCell extends StatelessWidget {
               '${day.day}',
               style: TextStyle(
                 fontSize: 13,
-                fontWeight: isToday || isSelected
-                    ? FontWeight.w700
-                    : FontWeight.normal,
+                fontWeight: isToday || isSelected ? FontWeight.w700 : FontWeight.normal,
                 color: textColor,
               ),
             ),
           ),
-          
+
           if (hasEvents && !isOutside && !isWeekView) ...[
             const SizedBox(height: 2),
             SizedBox(
@@ -628,8 +630,8 @@ class _DayCell extends StatelessWidget {
                     height: 4,
                     margin: const EdgeInsets.symmetric(horizontal: 1),
                     decoration: BoxDecoration(
-                      color: events[i].completed 
-                          ? Colors.green 
+                      color: events[i].completed
+                          ? Colors.green
                           : (events[i].dateTime.isBefore(DateTime.now()) ? AppColors.error : AppColors.primary),
                       shape: BoxShape.circle,
                     ),
@@ -638,35 +640,39 @@ class _DayCell extends StatelessWidget {
               ),
             ),
           ],
-          
+
           if (hasEvents && !isOutside && isWeekView) ...[
             const SizedBox(height: 2),
-            ...events.take(2).map((e) => Container(
-              margin: const EdgeInsets.only(bottom: 2, left: 2, right: 2),
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-              decoration: BoxDecoration(
-                color: e.completed ? AppColors.surfaceElevated : AppColors.primary.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                e.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 9,
-                  color: e.completed 
-                      ? AppColors.textTertiary 
-                      : (e.dateTime.isBefore(DateTime.now()) ? AppColors.error : AppColors.primary),
-                  decoration: e.completed ? TextDecoration.lineThrough : null,
-                  fontWeight: FontWeight.w500,
+            ...events
+                .take(2)
+                .map(
+                  (e) => Container(
+                    margin: const EdgeInsets.only(bottom: 2, left: 2, right: 2),
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: e.completed ? AppColors.surfaceElevated : AppColors.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      e.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 9,
+                        color: e.completed
+                            ? AppColors.textTertiary
+                            : (e.dateTime.isBefore(DateTime.now()) ? AppColors.error : AppColors.primary),
+                        decoration: e.completed ? TextDecoration.lineThrough : null,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-            )),
             if (events.length > 2)
               Text(
                 '+${events.length - 2}',
                 style: const TextStyle(fontSize: 9, color: AppColors.textSecondary, fontWeight: FontWeight.w600),
-              )
+              ),
           ],
         ],
       ),
@@ -684,7 +690,7 @@ class _EventRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+
     return InkWell(
       onTap: () {
         Navigator.pushNamed(context, AppRoutes.reminderDetail, arguments: reminder.id).then((_) => onReload());
@@ -753,14 +759,12 @@ class _EventRow extends StatelessWidget {
                 width: 10,
                 height: 10,
                 decoration: BoxDecoration(
-                  color: reminder.completed 
-                      ? Colors.green 
+                  color: reminder.completed
+                      ? Colors.green
                       : (reminder.dateTime.isBefore(DateTime.now()) ? AppColors.error : AppColors.primary),
                   shape: BoxShape.circle,
                 ),
-                child: reminder.completed
-                    ? const Icon(LucideIcons.check, size: 6, color: Colors.white)
-                    : null,
+                child: reminder.completed ? const Icon(LucideIcons.check, size: 6, color: Colors.white) : null,
               ),
             ),
             const SizedBox(width: AppSpacing.md),

@@ -12,7 +12,7 @@ class PhoneContactService {
   Future<List<PhoneContact>> getContacts() async {
     // We only need basic info and properties (phones)
     final contacts = await fc.FlutterContacts.getAll(
-      properties: {fc.ContactProperty.phone}, 
+      properties: {fc.ContactProperty.phone},
     );
 
     final List<PhoneContact> phoneContacts = [];
@@ -21,15 +21,17 @@ class PhoneContactService {
       if (c.phones.isNotEmpty) {
         // Just take the first phone number for now
         final phone = c.phones.first.number;
-        
+
         // We'll skip fetching photos in bulk to keep it fast, but we can store the ID
         // so we could fetch it individually if needed later.
-        phoneContacts.add(PhoneContact(
-          id: c.id ?? '',
-          displayName: c.displayName ?? '',
-          phoneNumber: phone,
-          photoUrl: null, // You can map c.photo if you use withPhoto: true
-        ));
+        phoneContacts.add(
+          PhoneContact(
+            id: c.id ?? '',
+            displayName: c.displayName ?? '',
+            phoneNumber: phone,
+            photoUrl: null, // You can map c.photo if you use withPhoto: true
+          ),
+        );
       }
     }
 

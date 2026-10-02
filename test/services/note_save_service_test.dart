@@ -37,13 +37,13 @@ void main() {
   tearDown(closeTestDatabase);
 
   ReviewedNote review(List<String> tasks, {DateTime? reminderAt, String summary = 'Summary'}) => ReviewedNote(
-        noteId: noteId,
-        contactId: contactId,
-        rawText: 'Viewing next Monday',
-        summary: summary,
-        taskTitles: tasks,
-        reminder: reminderAt == null ? null : (title: 'Viewing', dateTime: reminderAt),
-      );
+    noteId: noteId,
+    contactId: contactId,
+    rawText: 'Viewing next Monday',
+    summary: summary,
+    taskTitles: tasks,
+    reminder: reminderAt == null ? null : (title: 'Viewing', dateTime: reminderAt),
+  );
 
   Future<List<TodoItem>> tasks() => TodoRepository().getByNoteId(noteId);
   Future<int> pending() async => (await ContactRepository().getById(contactId))!.pendingTasksCount;

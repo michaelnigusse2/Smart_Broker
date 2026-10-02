@@ -5,19 +5,19 @@ class AppColors {
   static const primary = Color(0xFF4F46E5); // Indigo 600
   static const primaryLight = Color(0xFF818CF8); // Indigo 400
   static const primaryDark = Color(0xFF3730A3); // Indigo 800
-  
+
   static const background = Color(0xFFFAFAFA); // Ultra light gray background
   static const surface = Color(0xFFFFFFFF); // Pure white
   static const surfaceElevated = Color(0xFFF4F4F5); // Slightly darker surface for tonal separation
-  static const error = Color(0xFFEF4444); 
-  static const success = Color(0xFF10B981); // Emerald 500 
-  
+  static const error = Color(0xFFEF4444);
+  static const success = Color(0xFF10B981); // Emerald 500
+
   static const textPrimary = Color(0xFF111111); // Deep gray/almost black
   static const textSecondary = Color(0xFF666666); // Muted gray
   static const textTertiary = Color(0xFFA1A1AA); // Very light gray
-  
+
   static const divider = Color(0xFFEAEAEA); // Subtle border/divider
-  static const border = Color(0xFFE4E4E7); 
+  static const border = Color(0xFFE4E4E7);
 }
 
 class AppSpacing {
@@ -36,7 +36,7 @@ class AppRadius {
   static const double lg = 16.0;
   static const double xl = 24.0;
   static const double pill = 999.0;
-  
+
   static BorderRadius get card => BorderRadius.circular(lg);
   static BorderRadius get button => BorderRadius.circular(md);
   static BorderRadius get input => BorderRadius.circular(md);
@@ -46,7 +46,7 @@ class AppRadius {
 class AppTheme {
   static ThemeData get lightTheme {
     final baseTextTheme = GoogleFonts.interTextTheme();
-    
+
     return ThemeData(
       useMaterial3: true,
       colorScheme: ColorScheme.fromSeed(
@@ -63,8 +63,16 @@ class AppTheme {
         displayLarge: baseTextTheme.displayLarge?.copyWith(color: AppColors.textPrimary, letterSpacing: -0.5),
         displayMedium: baseTextTheme.displayMedium?.copyWith(color: AppColors.textPrimary, letterSpacing: -0.5),
         displaySmall: baseTextTheme.displaySmall?.copyWith(color: AppColors.textPrimary),
-        headlineLarge: baseTextTheme.headlineLarge?.copyWith(color: AppColors.textPrimary, fontWeight: FontWeight.bold, letterSpacing: -0.5),
-        headlineMedium: baseTextTheme.headlineMedium?.copyWith(color: AppColors.textPrimary, fontWeight: FontWeight.w600, letterSpacing: -0.5),
+        headlineLarge: baseTextTheme.headlineLarge?.copyWith(
+          color: AppColors.textPrimary,
+          fontWeight: FontWeight.bold,
+          letterSpacing: -0.5,
+        ),
+        headlineMedium: baseTextTheme.headlineMedium?.copyWith(
+          color: AppColors.textPrimary,
+          fontWeight: FontWeight.w600,
+          letterSpacing: -0.5,
+        ),
         headlineSmall: baseTextTheme.headlineSmall?.copyWith(color: AppColors.textPrimary, fontWeight: FontWeight.w600),
         titleLarge: baseTextTheme.titleLarge?.copyWith(color: AppColors.textPrimary, fontWeight: FontWeight.w600),
         titleMedium: baseTextTheme.titleMedium?.copyWith(color: AppColors.textPrimary, fontWeight: FontWeight.w600),

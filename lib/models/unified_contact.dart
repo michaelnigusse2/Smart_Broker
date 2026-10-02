@@ -1,5 +1,3 @@
-
-
 class UnifiedContact {
   final String id;
   final String name;
@@ -10,10 +8,10 @@ class UnifiedContact {
   final DateTime lastInteraction;
   final int pendingTasksCount;
   final String avatarUrl;
-  
+
   /// True if this contact exists in the SmartBroker SQLite database.
   final bool isSmartBrokerContact;
-  
+
   /// True if this contact exists in the device's native phone book.
   final bool isPhoneContact;
 

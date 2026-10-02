@@ -179,7 +179,7 @@ class _ReminderDetailScreenState extends State<ReminderDetailScreen> {
     if (date == null) return;
 
     if (!mounted) return;
-    
+
     final time = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(_editedDateTime!),
@@ -263,7 +263,7 @@ class _ReminderDetailScreenState extends State<ReminderDetailScreen> {
                     children: [
                       _buildStatusPill(),
                       const SizedBox(height: AppSpacing.xl),
-                      
+
                       // Title
                       if (_isEditing)
                         TextField(
@@ -287,9 +287,9 @@ class _ReminderDetailScreenState extends State<ReminderDetailScreen> {
                             color: _reminder!.completed ? AppColors.textSecondary : null,
                           ),
                         ),
-                      
+
                       const SizedBox(height: AppSpacing.lg),
-                      
+
                       // Date/Time
                       InkWell(
                         onTap: _isEditing ? _pickDateTime : null,
@@ -301,7 +301,9 @@ class _ReminderDetailScreenState extends State<ReminderDetailScreen> {
                               Icon(LucideIcons.calendar, size: 20, color: AppColors.primary),
                               const SizedBox(width: AppSpacing.md),
                               Text(
-                                DateFormat('EEEE, MMM d, yyyy').add_jm().format(_isEditing ? _editedDateTime! : _reminder!.dateTime),
+                                DateFormat(
+                                  'EEEE, MMM d, yyyy',
+                                ).add_jm().format(_isEditing ? _editedDateTime! : _reminder!.dateTime),
                                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                                   color: AppColors.primary,
                                 ),
@@ -310,7 +312,7 @@ class _ReminderDetailScreenState extends State<ReminderDetailScreen> {
                           ),
                         ),
                       ),
-                      
+
                       const SizedBox(height: AppSpacing.lg),
 
                       // Description
@@ -333,15 +335,15 @@ class _ReminderDetailScreenState extends State<ReminderDetailScreen> {
                           _reminder!.description,
                           style: Theme.of(context).textTheme.bodyMedium,
                         ),
-                        
+
                       const SizedBox(height: AppSpacing.xl),
                       const Divider(),
                       const SizedBox(height: AppSpacing.lg),
-                      
+
                       // Links
                       Text('Linked Context', style: Theme.of(context).textTheme.titleSmall),
                       const SizedBox(height: AppSpacing.md),
-                      
+
                       if (_contact != null)
                         _LinkRow(
                           icon: LucideIcons.user,
@@ -352,7 +354,7 @@ class _ReminderDetailScreenState extends State<ReminderDetailScreen> {
                             }
                           },
                         ),
-                        
+
                       if (_note != null) ...[
                         const SizedBox(height: AppSpacing.sm),
                         _LinkRow(
@@ -369,7 +371,7 @@ class _ReminderDetailScreenState extends State<ReminderDetailScreen> {
                   ),
                 ),
               ),
-              
+
               // Bottom Action
               if (!_isEditing)
                 Padding(
@@ -403,9 +405,9 @@ class _ReminderDetailScreenState extends State<ReminderDetailScreen> {
 class _Pill extends StatelessWidget {
   final Color color;
   final String label;
-  
+
   const _Pill({required this.color, required this.label});
-  
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -430,9 +432,9 @@ class _LinkRow extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
-  
+
   const _LinkRow({required this.icon, required this.label, required this.onTap});
-  
+
   @override
   Widget build(BuildContext context) {
     return InkWell(

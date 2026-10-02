@@ -8,8 +8,7 @@ class OverlayDraftService {
   static const _prefix = 'overlay_draft_';
   static final SharedPreferencesAsync _prefs = SharedPreferencesAsync();
 
-  Future<void> saveDraft(String contactId, String text) =>
-      _prefs.setString('$_prefix$contactId', text);
+  Future<void> saveDraft(String contactId, String text) => _prefs.setString('$_prefix$contactId', text);
 
   Future<String?> loadDraft(String contactId) => _prefs.getString('$_prefix$contactId');
 

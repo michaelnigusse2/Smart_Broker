@@ -18,13 +18,13 @@ class TasksScreen extends StatefulWidget {
 class _TasksScreenState extends State<TasksScreen> {
   final TodoRepository _todoRepo = TodoRepository();
   final ContactRepository _contactRepo = ContactRepository();
-  
+
   List<TodoWithContact> _todos = [];
   bool _isLoading = true;
-  
+
   TaskFilter _activeFilter = TaskFilter.all;
   TaskSort _activeSort = TaskSort.createdAt;
-  
+
   bool _isBulkMode = false;
   final Set<String> _selectedIds = {};
 
@@ -133,7 +133,7 @@ class _TasksScreenState extends State<TasksScreen> {
   void _showAddTaskSheet() async {
     final contacts = await _contactRepo.getAll();
     if (!mounted) return;
-    
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -141,10 +141,13 @@ class _TasksScreenState extends State<TasksScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
       ),
       builder: (context) {
-        return _AddTaskSheet(contacts: contacts, onSave: (todo) async {
-          await _todoRepo.insert(todo);
-          _loadTodos();
-        });
+        return _AddTaskSheet(
+          contacts: contacts,
+          onSave: (todo) async {
+            await _todoRepo.insert(todo);
+            _loadTodos();
+          },
+        );
       },
     );
   }
@@ -158,17 +161,17 @@ class _TasksScreenState extends State<TasksScreen> {
           _buildFilterBar(),
           _buildSortBar(),
           Expanded(
-            child: _isLoading 
-                ? const Center(child: CircularProgressIndicator())
-                : _buildList(),
+            child: _isLoading ? const Center(child: CircularProgressIndicator()) : _buildList(),
           ),
         ],
       ),
-      floatingActionButton: _isBulkMode ? null : FloatingActionButton(
-        onPressed: _showAddTaskSheet,
-        backgroundColor: AppColors.primary,
-        child: const Icon(LucideIcons.plus, color: Colors.white),
-      ),
+      floatingActionButton: _isBulkMode
+          ? null
+          : FloatingActionButton(
+              onPressed: _showAddTaskSheet,
+              backgroundColor: AppColors.primary,
+              child: const Icon(LucideIcons.plus, color: Colors.white),
+            ),
     );
   }
 
@@ -298,7 +301,7 @@ class _TasksScreenState extends State<TasksScreen> {
     if (_activeFilter == TaskFilter.all) {
       final pending = _todos.where((t) => !t.isCompleted).toList();
       final completed = _todos.where((t) => t.isCompleted).toList();
-      
+
       return ListView(
         padding: const EdgeInsets.all(AppSpacing.md),
         children: [
@@ -310,7 +313,7 @@ class _TasksScreenState extends State<TasksScreen> {
             const SizedBox(height: AppSpacing.lg),
             _buildSectionHeader('${completed.length} Completed'),
             ...completed.map((t) => _buildTodoTile(t)),
-          ]
+          ],
         ],
       );
     }
@@ -339,7 +342,7 @@ class _TasksScreenState extends State<TasksScreen> {
 
   Widget _buildTodoTile(TodoWithContact item) {
     final todo = item.todo;
-    
+
     // Relative time logic (simplistic for now)
     final diff = DateTime.now().difference(todo.createdAt);
     String timeStr;
@@ -468,19 +471,21 @@ class _AddTaskSheetState extends State<_AddTaskSheet> {
             ),
             const SizedBox(height: AppSpacing.md),
             ElevatedButton(
-              onPressed: _selectedContactId == null ? null : () {
-                if (_controller.text.trim().isEmpty) return;
-                
-                final todo = TodoItem(
-                  id: '',
-                  contactId: _selectedContactId!,
-                  title: _controller.text.trim(),
-                  isCompleted: false,
-                  createdAt: DateTime.now(),
-                );
-                widget.onSave(todo);
-                Navigator.pop(context);
-              },
+              onPressed: _selectedContactId == null
+                  ? null
+                  : () {
+                      if (_controller.text.trim().isEmpty) return;
+
+                      final todo = TodoItem(
+                        id: '',
+                        contactId: _selectedContactId!,
+                        title: _controller.text.trim(),
+                        isCompleted: false,
+                        createdAt: DateTime.now(),
+                      );
+                      widget.onSave(todo);
+                      Navigator.pop(context);
+                    },
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
                 foregroundColor: Colors.white,

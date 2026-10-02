@@ -83,7 +83,7 @@ class _NoteDetailScreenState extends State<NoteDetailScreen> {
     try {
       final note = await _noteRepo.getById(_noteId!);
       if (note == null) throw Exception('Note not found');
-      
+
       final contact = await _contactRepo.getById(note.contactId);
       final todos = await _todoRepo.getByNoteId(note.id);
       final reminders = await _reminderRepo.getByNoteId(note.id);
@@ -234,8 +234,8 @@ class _NoteDetailScreenState extends State<NoteDetailScreen> {
               InkWell(
                 onTap: () {
                   Navigator.pushNamed(
-                    context, 
-                    AppRoutes.contactDetail, 
+                    context,
+                    AppRoutes.contactDetail,
                     arguments: _contact!.id,
                   ).then((_) => _loadData());
                 },
@@ -371,7 +371,7 @@ class _NoteDetailScreenState extends State<NoteDetailScreen> {
                     ),
                   ),
                 ),
-              
+
               if (_todos.isNotEmpty) ...[
                 const SizedBox(height: AppSpacing.xxl),
                 Row(
@@ -382,13 +382,15 @@ class _NoteDetailScreenState extends State<NoteDetailScreen> {
                   ],
                 ),
                 const SizedBox(height: AppSpacing.sm),
-                ..._todos.map((todo) => TodoTile(
-                  todo: todo,
-                  onChanged: (val) async {
-                    await _todoRepo.toggleCompleted(todo.id);
-                    _loadData();
-                  },
-                )),
+                ..._todos.map(
+                  (todo) => TodoTile(
+                    todo: todo,
+                    onChanged: (val) async {
+                      await _todoRepo.toggleCompleted(todo.id);
+                      _loadData();
+                    },
+                  ),
+                ),
               ],
 
               if (_reminders.isNotEmpty) ...[
@@ -403,7 +405,7 @@ class _NoteDetailScreenState extends State<NoteDetailScreen> {
                 const SizedBox(height: AppSpacing.sm),
                 ..._reminders.map((r) => ReminderCard(reminder: r)),
               ],
-              
+
               const SizedBox(height: AppSpacing.xxxl),
             ],
           ),

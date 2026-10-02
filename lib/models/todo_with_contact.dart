@@ -5,7 +5,7 @@ class TodoWithContact {
   final String contactName;
 
   TodoWithContact({required this.todo, required this.contactName});
-  
+
   // Forward commonly used fields for convenience
   String get id => todo.id;
   String get contactId => todo.contactId;

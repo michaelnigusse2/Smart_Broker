@@ -24,8 +24,7 @@ class AiException implements Exception {
       AiException(message: 'Too many requests. Please wait a moment.', type: ExceptionType.rateLimit);
   factory AiException.invalidKey() =>
       AiException(message: 'Invalid API key. Please update in Settings.', type: ExceptionType.invalidKey);
-  factory AiException.unknown(Object e) =>
-      AiException(message: 'AI analysis failed: $e', type: ExceptionType.unknown);
+  factory AiException.unknown(Object e) => AiException(message: 'AI analysis failed: $e', type: ExceptionType.unknown);
 
   @override
   String toString() => message;
@@ -44,9 +43,9 @@ class AiService {
 
   /// [client] is for tests (e.g. `MockClient`); production uses a one-off client per call.
   AiService({required this.provider, required String apiKey, String? model, http.Client? client})
-      : _apiKey = apiKey,
-        _client = client,
-        model = (model == null || model.trim().isEmpty) ? provider.defaultModel : model.trim();
+    : _apiKey = apiKey,
+      _client = client,
+      model = (model == null || model.trim().isEmpty) ? provider.defaultModel : model.trim();
 
   /// Builds a service from the provider, key and model saved in Settings.
   /// Returns null when no key is configured for the selected provider.
@@ -59,9 +58,9 @@ class AiService {
   }
 
   Map<String, String> get _headers => {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $_apiKey',
-      };
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer $_apiKey',
+  };
 
   /// gpt-oss models spend tokens "thinking" first; keep that short.
   bool get _isReasoningModel => model.contains('gpt-oss');
@@ -109,13 +108,15 @@ class AiService {
   /// Sends a tiny request to check the key and model. Returns 'valid' or an error description.
   Future<String> validateKey() async {
     try {
-      final response = await _post(_requestBody(
-        [
-          {'role': 'user', 'content': 'Reply with the word OK.'}
-        ],
-        maxTokens: 256,
-        temperature: 0,
-      ));
+      final response = await _post(
+        _requestBody(
+          [
+            {'role': 'user', 'content': 'Reply with the word OK.'},
+          ],
+          maxTokens: 256,
+          temperature: 0,
+        ),
+      );
 
       switch (response.statusCode) {
         case 200:
@@ -233,7 +234,8 @@ RULES:
     required String pendingTodos,
     int maxRetries = 1,
   }) async {
-    final userPrompt = '''
+    final userPrompt =
+        '''
 CONTACT: $contactName
 
 CALENDAR:
@@ -260,11 +262,13 @@ $pendingTodos''';
     while (attempts <= maxRetries) {
       try {
         attempts++;
-        final response = await _post(_requestBody(
-          messages,
-          maxTokens: 2048,
-          responseFormat: useSchema ? _noteSchema : null,
-        ));
+        final response = await _post(
+          _requestBody(
+            messages,
+            maxTokens: 2048,
+            responseFormat: useSchema ? _noteSchema : null,
+          ),
+        );
 
         if (response.statusCode == 200) {
           final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -277,9 +281,12 @@ $pendingTodos''';
             throw Exception('API returned empty content');
           }
           // Full text only in debug builds: it summarises the user's client notes.
-          AppLog.d('AiService', kDebugMode
-              ? '[${provider.id}/$model] response: $content'
-              : '[${provider.id}/$model] response (${content.length} chars)');
+          AppLog.d(
+            'AiService',
+            kDebugMode
+                ? '[${provider.id}/$model] response: $content'
+                : '[${provider.id}/$model] response (${content.length} chars)',
+          );
           return AiResponseParser.parse(content);
         } else if (response.statusCode == 401 || response.statusCode == 403) {
           throw AiException.invalidKey();
@@ -287,8 +294,11 @@ $pendingTodos''';
           throw AiException.rateLimited();
         } else if (response.statusCode == 400 && useSchema) {
           final body = response.body;
-          AppLog.w('AiService', 'structured output rejected, retrying without it',
-              body.length > 300 ? body.substring(0, 300) : body);
+          AppLog.w(
+            'AiService',
+            'structured output rejected, retrying without it',
+            body.length > 300 ? body.substring(0, 300) : body,
+          );
           // The chosen model may not support structured output — retry without it.
           useSchema = false;
           attempts--;
@@ -297,7 +307,9 @@ $pendingTodos''';
           throw Exception('HTTP ${response.statusCode}: ${_extractErrorMessage(response.body)}');
         }
       } on TimeoutException {
-        throw AiException.unknown('Request timed out — the AI model is too slow. Try again later or pick a different model in Settings.');
+        throw AiException.unknown(
+          'Request timed out — the AI model is too slow. Try again later or pick a different model in Settings.',
+        );
       } on AiException {
         rethrow;
       } catch (e) {
