@@ -1,8 +1,14 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'dart:io' show Platform;
+import '../../../core/database/seed_data.dart';
+import '../../../core/repositories/contact_repository.dart';
+import '../../../core/services/app_log.dart';
+import '../../../core/services/notification_service.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/ai_consent_dialog.dart';
 import '../../../core/widgets/constrained_layout.dart';
 import '../../../core/services/api_key_service.dart';
 import '../../../core/services/ai_provider.dart';
@@ -38,7 +44,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   
   bool _promptAfterCall = true;
   int _minCallDuration = 10;
-  bool _showCallOverlay = true;
+  OverlayMode _overlayMode = OverlayMode.knownOnly;
   bool _overlayPermissionGranted = false;
 
   @override
@@ -71,7 +77,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _loadCallDetectionState() async {
     final promptEnabled = await _settingsService.getPromptAfterCall();
     final minDuration = await _settingsService.getMinCallDuration();
-    final showOverlay = await _settingsService.getShowCallOverlay();
+    final overlayMode = await _settingsService.getOverlayMode();
     
     bool overlayPerm = false;
     try {
@@ -82,7 +88,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       setState(() {
         _promptAfterCall = promptEnabled;
         _minCallDuration = minDuration;
-        _showCallOverlay = showOverlay;
+        _overlayMode = overlayMode;
         _overlayPermissionGranted = overlayPerm;
       });
     }
@@ -105,6 +111,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final model = _modelController.text.trim();
     if (key.isEmpty) {
       await ApiKeyService().deleteKey(_provider);
+      if (!mounted) return;
       setState(() {
         _hasKey = false;
         _statusMessage = 'Not configured';
@@ -185,8 +192,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  void _showSimulateCallDialog() {
-    final phoneController = TextEditingController(text: '+1234567890');
+  Future<void> _loadDemoData() async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final added = await SeedData.loadDemoData();
+      if (added) await NotificationService().rescheduleAll();
+      messenger.showSnackBar(SnackBar(
+        content: Text(added ? 'Demo data loaded' : 'Demo data is already loaded'),
+      ));
+    } catch (e, st) {
+      AppLog.e('Settings', 'loading demo data failed', e, st);
+      messenger.showSnackBar(SnackBar(content: Text('Could not load demo data: $e')));
+    }
+  }
+
+  Future<void> _showSimulateCallDialog() async {
+    // Default to a real contact's number so the overlay shows in "Known contacts" mode.
+    final contacts = await ContactRepository().getAll();
+    if (!mounted) return;
+    final phoneController = TextEditingController(
+      text: contacts.isNotEmpty ? contacts.first.phoneNumber.trim() : '+251900000099',
+    );
     String selectedType = 'incoming';
     final durationController = TextEditingController(text: '20');
 
@@ -251,11 +277,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 Navigator.pop(ctx);
 
                 final messenger = ScaffoldMessenger.of(context);
-                final overlayReady = _showCallOverlay && await FlutterOverlayWindow.isPermissionGranted();
+                final overlayReady = await _callMatchingService.overlayWouldShowFor(number);
                 messenger.showSnackBar(SnackBar(
                   content: Text(overlayReady
                       ? 'Simulating $selectedType call — the overlay will appear now'
-                      : 'Simulating $selectedType call (overlay is off or not permitted)'),
+                      : 'Simulating $selectedType call (no overlay: it is off, not permitted, '
+                          'or the number is not a contact)'),
                 ));
                 await _callMatchingService.simulateCall(
                   phoneNumber: number,
@@ -394,10 +421,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             ListTile(
-              leading: const Icon(LucideIcons.history),
-              title: const Text('Clear AI Cache'),
+              leading: const Icon(LucideIcons.shieldCheck),
+              title: const Text('Data & privacy'),
+              subtitle: const Text('What AI Review sends, and to whom'),
               trailing: const Icon(LucideIcons.chevronRight, size: 20),
-              onTap: () {},
+              onTap: () => showAiDataNotice(context, _provider),
             ),
             const Divider(height: 1),
 
@@ -456,7 +484,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   activeThumbColor: AppColors.primary,
                   onChanged: (val) async {
                     await _settingsService.setPromptAfterCall(val);
-                    setState(() => _promptAfterCall = val);
+                    if (mounted) setState(() => _promptAfterCall = val);
                   },
                 ),
                 if (_promptAfterCall)
@@ -492,17 +520,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
               const Divider(),
               ...[
-                SwitchListTile(
-                  title: const Text('Show live call overlay'),
-                  subtitle: const Text('Show a floating note-taking window during calls'),
-                  value: _showCallOverlay,
-                  activeThumbColor: AppColors.primary,
-                  onChanged: (val) async {
-                    await _settingsService.setShowCallOverlay(val);
-                    setState(() => _showCallOverlay = val);
-                  },
+                ListTile(
+                  title: const Text('Live call overlay'),
+                  subtitle: Text(switch (_overlayMode) {
+                    OverlayMode.knownOnly =>
+                      'Floating notes window for calls with your contacts. Unknown numbers get no overlay and no prompt.',
+                    OverlayMode.all => 'Floating notes window and prompt for every call, including unknown numbers.',
+                    OverlayMode.off => 'No floating window during calls.',
+                  }),
                 ),
-                if (_showCallOverlay && !_overlayPermissionGranted)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.md),
+                  child: SegmentedButton<OverlayMode>(
+                    segments: const [
+                      ButtonSegment(value: OverlayMode.knownOnly, label: Text('Contacts')),
+                      ButtonSegment(value: OverlayMode.all, label: Text('All calls')),
+                      ButtonSegment(value: OverlayMode.off, label: Text('Off')),
+                    ],
+                    selected: {_overlayMode},
+                    showSelectedIcon: false,
+                    onSelectionChanged: (selection) async {
+                      final mode = selection.first;
+                      await _settingsService.setOverlayMode(mode);
+                      if (mounted) setState(() => _overlayMode = mode);
+                    },
+                  ),
+                ),
+                if (_overlayMode != OverlayMode.off && !_overlayPermissionGranted)
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
                     child: OutlinedButton.icon(
@@ -531,12 +575,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const Divider(height: 1),
 
             _buildSectionHeader(context, 'Developer Tools'),
-            ListTile(
-              leading: const Icon(LucideIcons.bug),
-              title: const Text('Debug Menu'),
-              trailing: const Icon(LucideIcons.chevronRight, size: 20),
-              onTap: () {},
-            ),
+            if (kDebugMode)
+              ListTile(
+                leading: const Icon(LucideIcons.database),
+                title: const Text('Load demo data'),
+                subtitle: const Text('Debug builds only — adds 8 fictional contacts'),
+                trailing: const Icon(LucideIcons.chevronRight, size: 20),
+                onTap: _loadDemoData,
+              ),
             if (isAndroid)
               ListTile(
                 leading: const Icon(LucideIcons.phoneForwarded),

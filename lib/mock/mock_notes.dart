@@ -4,7 +4,7 @@ final mockNotes = [
   Note(
     id: 'n1',
     contactId: 'c1',
-    rawText: 'Spoke with Sarah about the upcoming Q3 infrastructure upgrade. She mentioned they are leaning towards AWS but need a cost breakdown. Need to send that over by Friday. Also, ask her if she wants to grab coffee next Tuesday.',
+    rawText: 'Spoke with Sara about the upcoming Q3 infrastructure upgrade. She mentioned they are leaning towards AWS but need a cost breakdown. Need to send that over by Friday. Also, ask her if she wants to grab coffee next Tuesday.',
     aiSummary: 'Discussed Q3 infrastructure upgrade. Client prefers AWS but requires a cost breakdown. Promised to deliver by Friday. Also suggested coffee next Tuesday.',
     createdAt: DateTime.now().subtract(const Duration(hours: 2)),
   ),
@@ -18,7 +18,7 @@ final mockNotes = [
   Note(
     id: 'n3',
     contactId: 'c2',
-    rawText: 'Michael wants to see a demo of our new analytics dashboard. I told him we could schedule something for next week. He also asked about integration with their existing CRM system.',
+    rawText: 'Dawit wants to see a demo of our new analytics dashboard. I told him we could schedule something for next week. He also asked about integration with their existing CRM system.',
     aiSummary: 'Client requested demo of analytics dashboard for next week. Inquired about integration capabilities with their current CRM.',
     createdAt: DateTime.now().subtract(const Duration(days: 1)),
   ),

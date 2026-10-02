@@ -36,15 +36,11 @@ class PhoneContactService {
     return phoneContacts;
   }
 
-  /// Finds a device contact by normalized phone number
+  /// Finds a device contact with the same number (last 9 digits, like call matching).
   Future<PhoneContact?> findByPhoneNumber(String number) async {
     final contacts = await getContacts();
-    final normalizedSearch = PhoneContact.normalizePhoneNumber(number);
-    
     for (final c in contacts) {
-      if (c.normalizedNumber == normalizedSearch) {
-        return c;
-      }
+      if (PhoneContact.numbersMatch(c.phoneNumber, number)) return c;
     }
     return null;
   }

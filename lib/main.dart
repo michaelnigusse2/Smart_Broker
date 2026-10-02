@@ -7,6 +7,7 @@ import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 
 import 'core/constants/app_routes.dart';
 import 'core/database/seed_data.dart';
+import 'core/services/app_log.dart';
 import 'core/services/call_detection_service.dart';
 import 'core/services/call_matching_service.dart';
 import 'core/services/call_overlay_state.dart';
@@ -31,14 +32,14 @@ void main() {
     WidgetsFlutterBinding.ensureInitialized();
     FlutterError.onError = (details) {
       FlutterError.presentError(details);
-      debugPrint('FlutterError: ${details.exceptionAsString()}');
+      AppLog.e('Flutter', details.exceptionAsString(), null, details.stack);
     };
     PlatformDispatcher.instance.onError = (error, stack) {
-      debugPrint('Uncaught platform error: $error\n$stack');
+      AppLog.e('Platform', 'uncaught error', error, stack);
       return true;
     };
     await _startApp();
-  }, (error, stack) => debugPrint('Uncaught zone error: $error\n$stack'));
+  }, (error, stack) => AppLog.e('Zone', 'uncaught error', error, stack));
 }
 
 /// Runs startup and shows the app, or an error screen if the database can't
@@ -58,7 +59,7 @@ Future<Object?> _initialise() async {
   try {
     await SeedData.seedIfNeeded(); // Opens the database.
   } catch (e, st) {
-    debugPrint('Startup: database unavailable: $e\n$st');
+    AppLog.e('Startup', 'database unavailable', e, st);
     return e;
   }
   await _nonFatal('notifications', () => NotificationService().init());
@@ -72,7 +73,7 @@ Future<void> _nonFatal(String step, Future<void> Function() action) async {
   try {
     await action();
   } catch (e, st) {
-    debugPrint('Startup: $step failed, continuing: $e\n$st');
+    AppLog.e('Startup', '$step failed, continuing', e, st);
   }
 }
 
@@ -90,7 +91,7 @@ void _listenToOverlayOnce() {
       }
     });
   } catch (e) {
-    debugPrint('Startup: overlay listener unavailable: $e');
+    AppLog.w('Startup', 'overlay listener unavailable', e);
   }
 }
 
@@ -119,7 +120,7 @@ Future<void> _restoreCallDetection() async {
       CallMatchingService().startListening();
     }
   } catch (e) {
-    debugPrint('Could not restore call detection: $e');
+    AppLog.w('Startup', 'could not restore call detection', e);
   }
 }
 
@@ -127,9 +128,12 @@ Future<void> _restoreCallDetection() async {
 Future<void> openPendingAiReview() async {
   final pending = await CallOverlayState.takePendingReview();
   if (pending == null) return;
+  // Save the note first: the pending entry is gone now, so this is its only copy.
+  // If that fails, AI Review gets the text and tries again.
+  final noteId = await CallOverlayState.savePendingNote(pending);
   AppRoutes.globalNavigatorKey.currentState?.pushNamed(
     AppRoutes.aiReview,
-    arguments: pending,
+    arguments: {...pending, 'noteId': ?noteId},
   );
 }
 

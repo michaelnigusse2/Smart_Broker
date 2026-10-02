@@ -35,8 +35,8 @@ class _ReminderDetailScreenState extends State<ReminderDetailScreen> {
 
   // Edit Mode state
   bool _isEditing = false;
-  late TextEditingController _titleController;
-  late TextEditingController _descriptionController;
+  final _titleController = TextEditingController();
+  final _descriptionController = TextEditingController();
   DateTime? _editedDateTime;
 
   @override
@@ -57,10 +57,8 @@ class _ReminderDetailScreenState extends State<ReminderDetailScreen> {
 
   @override
   void dispose() {
-    if (_isEditing) {
-      _titleController.dispose();
-      _descriptionController.dispose();
-    }
+    _titleController.dispose();
+    _descriptionController.dispose();
     super.dispose();
   }
 
@@ -97,8 +95,8 @@ class _ReminderDetailScreenState extends State<ReminderDetailScreen> {
   }
 
   void _enterEditMode() {
-    _titleController = TextEditingController(text: _reminder!.title);
-    _descriptionController = TextEditingController(text: _reminder!.description);
+    _titleController.text = _reminder!.title;
+    _descriptionController.text = _reminder!.description;
     _editedDateTime = _reminder!.dateTime;
     setState(() {
       _isEditing = true;
@@ -106,8 +104,6 @@ class _ReminderDetailScreenState extends State<ReminderDetailScreen> {
   }
 
   void _cancelEditMode() {
-    _titleController.dispose();
-    _descriptionController.dispose();
     setState(() {
       _isEditing = false;
     });
@@ -188,7 +184,7 @@ class _ReminderDetailScreenState extends State<ReminderDetailScreen> {
       context: context,
       initialTime: TimeOfDay.fromDateTime(_editedDateTime!),
     );
-    if (time == null) return;
+    if (time == null || !mounted) return;
 
     setState(() {
       _editedDateTime = DateTime(

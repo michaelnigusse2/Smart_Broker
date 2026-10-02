@@ -5,8 +5,12 @@ import '../repositories/contact_repository.dart';
 import 'phone_contact_service.dart';
 
 class ContactMergeService {
-  final ContactRepository _contactRepo = ContactRepository();
-  final PhoneContactService _phoneService = PhoneContactService();
+  final ContactRepository _contactRepo;
+  final PhoneContactService _phoneService;
+
+  ContactMergeService({ContactRepository? contactRepo, PhoneContactService? phoneService})
+      : _contactRepo = contactRepo ?? ContactRepository(),
+        _phoneService = phoneService ?? PhoneContactService();
 
   Future<List<UnifiedContact>> getUnifiedContacts() async {
     // 1. Fetch from both sources
@@ -35,6 +39,7 @@ class ContactMergeService {
 
     final unifiedList = <UnifiedContact>[];
     final processedSmartContactIds = <String>{};
+    final seenPhoneOnlyKeys = <String>{};
 
     // 3. Process Phone Contacts
     for (var pc in phoneContacts) {
@@ -59,7 +64,9 @@ class ContactMergeService {
         ));
         processedSmartContactIds.add(match.id);
       } else {
-        // Phone-only contact
+        // Phone-only contact (once per number, same as merged ones above)
+        final key = PhoneContact.matchKey(pc.phoneNumber);
+        if (key.isNotEmpty && !seenPhoneOnlyKeys.add(key)) continue;
         unifiedList.add(UnifiedContact(
           id: pc.id,
           name: pc.displayName,

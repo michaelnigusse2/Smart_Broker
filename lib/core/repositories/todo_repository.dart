@@ -5,30 +5,44 @@ import '../../models/todo_item.dart';
 
 import '../../models/todo_with_contact.dart';
 
+/// Which tasks [TodoRepository.getAll] returns.
+enum TaskFilter {
+  all,
+  pending,
+  completed,
+
+  /// Open and created more than 7 days ago (until tasks get due dates).
+  overdue,
+}
+
+/// Order of [TodoRepository.getAll].
+enum TaskSort { createdAt, contact }
+
 class TodoRepository {
   final DatabaseHelper _db = DatabaseHelper();
   final _uuid = const Uuid();
 
-  Future<List<TodoWithContact>> getAll({String? filter, String? sortBy}) async {
+  Future<List<TodoWithContact>> getAll({
+    TaskFilter filter = TaskFilter.all,
+    TaskSort sortBy = TaskSort.createdAt,
+  }) async {
     final db = await _db.database;
-    
-    String where = '';
-    List<Object?> whereArgs = [];
-    
-    if (filter == 'pending') {
-      where = 't.isCompleted = 0';
-    } else if (filter == 'completed') {
-      where = 't.isCompleted = 1';
-    } else if (filter == 'overdue') {
-      where = 't.isCompleted = 0 AND t.createdAt < ?';
-      final cutoff = DateTime.now().subtract(const Duration(days: 7)).millisecondsSinceEpoch;
-      whereArgs.add(cutoff);
+
+    final whereArgs = <Object?>[];
+    final where = switch (filter) {
+      TaskFilter.all => '',
+      TaskFilter.pending => 't.isCompleted = 0',
+      TaskFilter.completed => 't.isCompleted = 1',
+      TaskFilter.overdue => 't.isCompleted = 0 AND t.createdAt < ?',
+    };
+    if (filter == TaskFilter.overdue) {
+      whereArgs.add(DateTime.now().subtract(const Duration(days: 7)).millisecondsSinceEpoch);
     }
-    
-    String orderBy = 't.createdAt DESC';
-    if (sortBy == 'contact') {
-      orderBy = 'contactName ASC, t.createdAt DESC';
-    }
+
+    final orderBy = switch (sortBy) {
+      TaskSort.createdAt => 't.createdAt DESC',
+      TaskSort.contact => 'contactName COLLATE NOCASE ASC, t.createdAt DESC',
+    };
 
     final query = '''
       SELECT t.*, c.name AS contactName
@@ -81,7 +95,12 @@ class TodoRepository {
     return maps.map((m) => TodoItem.fromMap(m)).toList();
   }
 
-  Future<void> _updateContactTasksCount(Database db, String contactId) async {
+  Future<void> _updateContactTasksCount(DatabaseExecutor db, String contactId) =>
+      recountForContact(db, contactId);
+
+  /// Recomputes `contacts.pendingTasksCount`. Takes an executor so it can run
+  /// inside a transaction.
+  static Future<void> recountForContact(DatabaseExecutor db, String contactId) async {
     final countMaps = await db.query(
       'todos',
       columns: ['COUNT(*)'],

@@ -8,6 +8,7 @@ import '../../../core/widgets/constrained_layout.dart';
 import '../../../core/widgets/todo_tile.dart';
 import '../../../core/widgets/reminder_card.dart';
 import '../../../core/widgets/info_chip.dart';
+import '../../../core/widgets/text_prompt.dart';
 import '../../../core/repositories/contact_repository.dart';
 import '../../../core/repositories/note_repository.dart';
 import '../../../core/repositories/todo_repository.dart';
@@ -464,7 +465,9 @@ class _NotesList extends StatelessWidget {
                     children: [
                       Row(
                         children: [
-                          const InfoChip(label: 'AI Summary', color: AppColors.primary),
+                          note.aiSummary.isEmpty
+                              ? const InfoChip(label: 'Not processed', color: AppColors.textSecondary)
+                              : const InfoChip(label: 'AI Summary', color: AppColors.primary),
                           const SizedBox(width: AppSpacing.sm),
                           Text(
                             DateFormat.yMMMd().format(note.createdAt),
@@ -473,17 +476,27 @@ class _NotesList extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: AppSpacing.sm),
-                      Text(
-                        note.aiSummary,
-                        style: theme.textTheme.bodyMedium,
-                      ),
-                      const SizedBox(height: AppSpacing.xs),
-                      Text(
-                        '"${note.rawText}"',
-                        style: theme.textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                      if (note.aiSummary.isEmpty)
+                        // Saved without AI: show the note itself.
+                        Text(
+                          note.rawText,
+                          style: theme.textTheme.bodyMedium,
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                        )
+                      else ...[
+                        Text(
+                          note.aiSummary,
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                        const SizedBox(height: AppSpacing.xs),
+                        Text(
+                          '"${note.rawText}"',
+                          style: theme.textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -595,64 +608,14 @@ class _TodosListState extends State<_TodosList> {
     );
   }
 
-  void _showAddTaskSheet(BuildContext context) {
-    final controller = TextEditingController();
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
-      ),
-      builder: (context) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom,
-          left: AppSpacing.md,
-          right: AppSpacing.md,
-          top: AppSpacing.md,
-        ),
-        child: SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text('New Task', style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: AppSpacing.md),
-              TextField(
-                controller: controller,
-                autofocus: true,
-                textCapitalization: TextCapitalization.sentences,
-                decoration: const InputDecoration(
-                  hintText: 'What needs to be done?',
-                  border: OutlineInputBorder(),
-                ),
-                onSubmitted: (value) {
-                  if (value.trim().isNotEmpty) {
-                    widget.onAdd(value.trim());
-                    Navigator.pop(context);
-                  }
-                },
-              ),
-              const SizedBox(height: AppSpacing.md),
-              ElevatedButton(
-                onPressed: () {
-                  if (controller.text.trim().isNotEmpty) {
-                    widget.onAdd(controller.text.trim());
-                    Navigator.pop(context);
-                  }
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
-                ),
-                child: const Text('Save Task'),
-              ),
-              const SizedBox(height: AppSpacing.md),
-            ],
-          ),
-        ),
-      ),
+  Future<void> _showAddTaskSheet(BuildContext context) async {
+    final title = await showTextPromptSheet(
+      context,
+      title: 'New Task',
+      hint: 'What needs to be done?',
+      confirmLabel: 'Save Task',
     );
+    if (title != null && mounted) widget.onAdd(title);
   }
 }
 
@@ -753,7 +716,5 @@ class _RemindersList extends StatelessWidget {
 }
 
 extension StringExtension on String {
-  String capitalize() {
-    return "${this[0].toUpperCase()}${substring(1)}";
-  }
+  String capitalize() => isEmpty ? this : '${this[0].toUpperCase()}${substring(1)}';
 }

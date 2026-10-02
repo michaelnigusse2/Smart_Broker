@@ -119,11 +119,26 @@ class _NoteDetailScreenState extends State<NoteDetailScreen> {
       aiSummary: _aiSummaryController.text.trim(),
     );
     await _noteRepo.update(updatedNote);
+    if (!mounted) return;
     setState(() {
       _note = updatedNote;
       _isEditing = false;
     });
     // Do not reload full data as we only updated the note
+  }
+
+  Future<void> _runAiReview() async {
+    if (_note == null) return;
+    await Navigator.pushNamed(
+      context,
+      AppRoutes.aiReview,
+      arguments: {
+        'contactId': _note!.contactId,
+        'rawText': _note!.rawText,
+        'noteId': _note!.id,
+      },
+    );
+    if (mounted) _loadData();
   }
 
   Future<void> _deleteNote() async {
@@ -190,6 +205,11 @@ class _NoteDetailScreenState extends State<NoteDetailScreen> {
               child: const Text('Save', style: TextStyle(fontWeight: FontWeight.bold)),
             ),
           ] else ...[
+            IconButton(
+              icon: const Icon(LucideIcons.sparkles),
+              tooltip: 'AI Review',
+              onPressed: _runAiReview,
+            ),
             IconButton(
               icon: const Icon(LucideIcons.edit2),
               onPressed: () {
@@ -291,10 +311,22 @@ class _NoteDetailScreenState extends State<NoteDetailScreen> {
                     borderRadius: AppRadius.card,
                     border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
                   ),
-                  child: Text(
-                    _note!.aiSummary,
-                    style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
-                  ),
+                  child: _note!.aiSummary.isEmpty
+                      ? Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Not processed by AI yet.',
+                                style: theme.textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary),
+                              ),
+                            ),
+                            TextButton(onPressed: _runAiReview, child: const Text('Run AI Review')),
+                          ],
+                        )
+                      : Text(
+                          _note!.aiSummary,
+                          style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
+                        ),
                 ),
               const SizedBox(height: AppSpacing.xxl),
 

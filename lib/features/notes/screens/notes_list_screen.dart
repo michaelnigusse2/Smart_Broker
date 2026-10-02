@@ -64,6 +64,8 @@ class _NotesListScreenState extends State<NotesListScreen> {
       });
     } else {
       final results = await _noteRepo.search(query);
+      // The user may have typed more (or left) while this query ran.
+      if (!mounted || query != _searchQuery) return;
       setState(() {
         _filteredNotes = results;
       });
@@ -263,8 +265,10 @@ class _NotesListScreenState extends State<NotesListScreen> {
                                           ),
                                           const SizedBox(height: AppSpacing.md),
                                           Text(
-                                            note.aiSummary,
-                                            style: Theme.of(context).textTheme.bodyMedium,
+                                            note.aiSummary.isEmpty ? 'Not processed by AI yet' : note.aiSummary,
+                                            style: note.aiSummary.isEmpty
+                                                ? Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.textTertiary)
+                                                : Theme.of(context).textTheme.bodyMedium,
                                             maxLines: 2,
                                             overflow: TextOverflow.ellipsis,
                                           ),

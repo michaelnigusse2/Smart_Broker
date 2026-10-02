@@ -16,12 +16,16 @@ class AiProvider {
   /// Whether the provider supports `response_format: json_schema` (strict).
   final bool supportsJsonSchema;
 
+  /// The provider's page describing how it handles API data.
+  final String privacyUrl;
+
   const AiProvider({
     required this.id,
     required this.name,
     required this.baseUrl,
     required this.defaultModel,
     required this.keyUrl,
+    required this.privacyUrl,
     this.supportsJsonSchema = false,
   });
 
@@ -34,6 +38,7 @@ class AiProvider {
     baseUrl: 'https://api.groq.com/openai/v1',
     defaultModel: 'openai/gpt-oss-20b',
     keyUrl: 'console.groq.com/keys',
+    privacyUrl: 'console.groq.com/docs/your-data',
     supportsJsonSchema: true,
   );
 
@@ -44,6 +49,7 @@ class AiProvider {
     baseUrl: 'https://openrouter.ai/api/v1',
     defaultModel: 'openai/gpt-oss-120b:free',
     keyUrl: 'openrouter.ai/keys',
+    privacyUrl: 'openrouter.ai/privacy',
   );
 
   /// The original provider. Kept for existing keys.
@@ -53,6 +59,7 @@ class AiProvider {
     baseUrl: 'https://integrate.api.nvidia.com/v1',
     defaultModel: 'meta/llama-3.1-8b-instruct',
     keyUrl: 'build.nvidia.com',
+    privacyUrl: 'nvidia.com/en-us/about-nvidia/privacy-policy',
   );
 
   static const all = [groq, openRouter, nvidia];

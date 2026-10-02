@@ -4,6 +4,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/constants/app_routes.dart';
 import '../../../core/widgets/constrained_layout.dart';
 import '../../../models/note.dart';
+import '../../../core/repositories/note_repository.dart';
 import '../../../core/services/overlay_draft_service.dart';
 
 class AddNoteScreen extends StatefulWidget {
@@ -20,7 +21,15 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
   bool _isPostCall = false;
   String? _durationStr;
   bool _isDraftRestored = false;
+  bool _isSaving = false;
   final _draftService = OverlayDraftService();
+
+  /// Id of the note once it has been saved from this screen (so pressing
+  /// Save/AI Review again updates it instead of creating a duplicate).
+  String? _savedNoteId;
+
+  /// The text as last saved, to tell whether closing would lose edits.
+  String? _savedText;
 
   @override
   void didChangeDependencies() {
@@ -64,6 +73,64 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
     super.dispose();
   }
 
+  /// Saves the raw note before anything else, so it survives no key, no
+  /// network or a failed AI call. Returns the note id, or null if empty.
+  Future<String?> _persist() async {
+    final text = _noteController.text.trim();
+    if (text.isEmpty || _contactId == null) return null;
+    setState(() => _isSaving = true);
+    try {
+      final id = await NoteRepository().saveNote(
+        contactId: _contactId!,
+        rawText: text,
+        existingNoteId: _savedNoteId ?? _note?.id,
+      );
+      _savedNoteId = id;
+      _savedText = text;
+      await _draftService.clearDraft(_contactId!);
+      return id;
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  Future<void> _save() async {
+    final id = await _persist();
+    if (id == null || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Note saved')),
+    );
+    Navigator.pop(context, true);
+  }
+
+  Future<void> _saveAndReview() async {
+    final id = await _persist();
+    if (id == null || !mounted) return;
+    Navigator.pushNamed(
+      context,
+      AppRoutes.aiReview,
+      arguments: {
+        'contactId': _contactId,
+        'rawText': _noteController.text.trim(),
+        'noteId': id,
+      },
+    );
+  }
+
+  /// Closing with unsaved text keeps it as a draft instead of losing it.
+  Future<void> _close() async {
+    final text = _noteController.text.trim();
+    final unsaved = text.isNotEmpty && text != (_savedText ?? _note?.rawText);
+    if (unsaved && _contactId != null) {
+      await _draftService.saveDraft(_contactId!, text);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Draft kept — it will be here next time')),
+      );
+    }
+    if (mounted) Navigator.pop(context);
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_contactId == null) {
@@ -72,36 +139,29 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
       );
     }
 
-    return Scaffold(
+    // The system back gesture goes through _close too, so typed text is kept.
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _close();
+      },
+      child: Scaffold(
       backgroundColor: AppColors.surface, // Distraction free pure white
       appBar: AppBar(
         backgroundColor: AppColors.surface,
         elevation: 0,
         leading: IconButton(
           icon: const Icon(LucideIcons.x),
-          onPressed: () => Navigator.pop(context),
+          tooltip: 'Close',
+          onPressed: _isSaving ? null : _close,
         ),
         actions: [
+          TextButton(
+            onPressed: _isSaving ? null : _save,
+            child: const Text('Save'),
+          ),
           TextButton.icon(
-            onPressed: () async {
-              if (_noteController.text.trim().isEmpty) return;
-              
-              if (_contactId != null) {
-                await _draftService.clearDraft(_contactId!);
-              }
-
-              if (!context.mounted) return;
-              
-              Navigator.pushNamed(
-                context, 
-                AppRoutes.aiReview,
-                arguments: {
-                  'contactId': _contactId,
-                  'rawText': _noteController.text.trim(),
-                  'noteId': _note?.id,
-                },
-              );
-            },
+            onPressed: _isSaving ? null : _saveAndReview,
             icon: const Icon(LucideIcons.sparkles, size: 16),
             label: const Text('AI Review'),
           ),
@@ -192,6 +252,7 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
           ),
         ),
       ),
+    ),
     );
   }
 }

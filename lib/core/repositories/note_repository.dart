@@ -56,6 +56,41 @@ class NoteRepository {
     )).toList();
   }
 
+  /// Persists the raw note text right away (before any AI processing) and
+  /// marks the contact as recently active. Updates [existingNoteId] if given,
+  /// keeping its AI summary. Returns the note id.
+  Future<String> saveNote({
+    required String contactId,
+    required String rawText,
+    String? existingNoteId,
+  }) async {
+    final db = await _db.database;
+    final now = DateTime.now();
+    return db.transaction((txn) async {
+      String id;
+      if (existingNoteId != null) {
+        id = existingNoteId;
+        await txn.update('notes', {'rawText': rawText}, where: 'id = ?', whereArgs: [id]);
+      } else {
+        id = _uuid.v4();
+        await txn.insert('notes', Note(
+          id: id,
+          contactId: contactId,
+          rawText: rawText,
+          aiSummary: '',
+          createdAt: now,
+        ).toMap());
+      }
+      await txn.update(
+        'contacts',
+        {'lastInteraction': now.millisecondsSinceEpoch},
+        where: 'id = ?',
+        whereArgs: [contactId],
+      );
+      return id;
+    });
+  }
+
   Future<String> insert(Note note) async {
     final db = await _db.database;
     final id = note.id.isEmpty ? _uuid.v4() : note.id;

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
 import '../../../core/database/database_helper.dart';
+import '../../../core/services/app_log.dart';
 import '../../../core/theme/app_theme.dart';
 
 /// Shown instead of the app when a fatal startup step (opening the local
@@ -71,12 +72,13 @@ class _StartupErrorScreenState extends State<StartupErrorScreen> {
     }
     if (!mounted) return;
     if (!await _confirm('Are you sure?', 'This cannot be undone.', 'Delete everything')) return;
+    if (!mounted) return;
 
     setState(() => _busy = true);
     try {
       await DatabaseHelper.deleteLocalDatabase();
     } catch (e) {
-      debugPrint('StartupErrorScreen: could not delete database: $e');
+      AppLog.e('Startup', 'could not delete database', e);
     }
     await widget.onRetry();
     if (mounted) setState(() => _busy = false);

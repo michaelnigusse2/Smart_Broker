@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
-import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 
 import '../../models/call_entry.dart';
 import '../../models/call_event.dart';
@@ -12,10 +11,52 @@ import '../repositories/call_repository.dart';
 import '../repositories/contact_repository.dart';
 import '../repositories/note_repository.dart';
 import '../repositories/todo_repository.dart';
+import 'app_log.dart';
 import 'call_detection_service.dart';
 import 'call_overlay_state.dart';
 import 'notification_service.dart';
+import 'overlay_gateway.dart';
 import 'settings_service.dart';
+
+/// Whether the live overlay should be visible for a call.
+///
+/// [number] is null while it isn't known yet: Android reports the caller's
+/// number a moment after "ringing", and never reports it for outgoing calls
+/// until the call log is written. In [OverlayMode.knownOnly] a ringing call
+/// waits for the number; an answered or outgoing call without one is shown,
+/// because the user chose to take part in it.
+@visibleForTesting
+bool shouldShowOverlay({
+  required OverlayMode mode,
+  required String phase,
+  required String? number,
+  required bool isKnownContact,
+}) {
+  switch (mode) {
+    case OverlayMode.off:
+      return false;
+    case OverlayMode.all:
+      return true;
+    case OverlayMode.knownOnly:
+      if (number != null && number.isNotEmpty) return isKnownContact;
+      return phase == 'active';
+  }
+}
+
+/// Whether to show the "add a note" notification after a call. Unknown
+/// callers only get one in [OverlayMode.all] (until the unassigned-calls inbox).
+@visibleForTesting
+bool shouldPromptAfterCall({
+  required bool promptEnabled,
+  required OverlayMode mode,
+  required CallType type,
+  required Duration duration,
+  required Duration minDuration,
+  required bool isKnownContact,
+}) {
+  if (!promptEnabled || type == CallType.missed || duration < minDuration) return false;
+  return isKnownContact || mode == OverlayMode.all;
+}
 
 /// Turns native call events into app behaviour:
 /// - shows the live call overlay (ringing → active → ended) with the caller's context,
@@ -26,10 +67,15 @@ class CallMatchingService {
   factory CallMatchingService() => _instance;
   CallMatchingService._internal();
 
+  static const _tag = 'CallMatching';
+
   final CallRepository _callRepo = CallRepository();
   final ContactRepository _contactRepo = ContactRepository();
   final CallDetectionService _detectionService = CallDetectionService();
   final SettingsService _settings = SettingsService();
+
+  @visibleForTesting
+  OverlayGateway overlay = const OverlayGateway();
 
   StreamSubscription<Map<String, dynamic>>? _subscription;
 
@@ -48,15 +94,15 @@ class CallMatchingService {
     _subscription?.cancel();
     _subscription = _detectionService.callEvents.listen(
       _handleRawEvent,
-      onError: (e) => debugPrint('CallMatchingService: event stream error: $e'),
+      onError: (e) => AppLog.w(_tag, 'event stream error', e),
     );
-    debugPrint('CallMatchingService: started listening for call events');
+    AppLog.i(_tag, 'started listening for call events');
   }
 
   void stopListening() {
     _subscription?.cancel();
     _subscription = null;
-    debugPrint('CallMatchingService: stopped listening');
+    AppLog.i(_tag, 'stopped listening');
   }
 
   /// Logs a finished call directly (no overlay). Kept for tests/tools.
@@ -104,7 +150,7 @@ class CallMatchingService {
           await _handleCallLogged(CallEvent.fromMap(data));
       }
     } catch (e, st) {
-      debugPrint('CallMatchingService: error handling $data: $e\n$st');
+      AppLog.e(_tag, 'error handling ${data['event']} event', e, st);
     }
   }
 
@@ -122,11 +168,14 @@ class CallMatchingService {
           _callInProgress = true;
           await _startOverlay(phase: 'active', number: hasNumber ? number : null);
         } else {
-          await _updateOverlay({
+          final updated = await _updateOverlay({
             'phase': 'active',
             'startedAt': DateTime.now().millisecondsSinceEpoch,
             if (hasNumber) 'number': number,
+            if (hasNumber) ...await _contextFor(number),
           });
+          // A ringing call from a not-yet-known number may not be showing yet.
+          await _showOverlayIfWanted(updated);
         }
       case 'idle':
         if (!_callInProgress) return; // Initial idle state when listening starts.
@@ -142,49 +191,54 @@ class CallMatchingService {
     if (number == null || number.isEmpty || !_callInProgress) return;
     final state = await CallOverlayState.read();
     if (state == null || (state['contactId'] as String?) != null) return;
-    await _updateOverlay({'number': number, ...await _contextFor(number)});
+    final updated = await _updateOverlay({'number': number, ...await _contextFor(number)});
+    await _showOverlayIfWanted(updated);
   }
 
-  Future<bool> _overlayAllowed() async {
-    if (!await _settings.getShowCallOverlay()) return false;
-    try {
-      return await FlutterOverlayWindow.isPermissionGranted();
-    } catch (_) {
-      return false;
-    }
+  /// Whether a call from [number] would show the overlay right now (mode,
+  /// contact match and permission). Used by Settings → Simulate Call.
+  Future<bool> overlayWouldShowFor(String number) async {
+    final known = (await _findContact(number)) != null;
+    final mode = await _settings.getOverlayMode();
+    return shouldShowOverlay(mode: mode, phase: 'ringing', number: number, isKnownContact: known) &&
+        await overlay.isPermissionGranted();
   }
 
   Future<void> _startOverlay({required String phase, String? number}) async {
-    final now = DateTime.now().millisecondsSinceEpoch;
-    await CallOverlayState.write({
+    final state = {
       'phase': phase,
       'number': number,
-      'startedAt': now,
+      'startedAt': DateTime.now().millisecondsSinceEpoch,
       if (number != null) ...await _contextFor(number),
-    });
+    };
+    await CallOverlayState.write(state);
+    await _showOverlayIfWanted(state);
+  }
 
-    if (!await _overlayAllowed()) return;
+  /// Shows the overlay for the current call [state] if the overlay mode allows it.
+  Future<void> _showOverlayIfWanted(Map<String, dynamic> state) async {
+    final number = state['number'] as String?;
+    final mode = await _settings.getOverlayMode();
+    final wanted = shouldShowOverlay(
+      mode: mode,
+      phase: state['phase'] as String? ?? 'ringing',
+      number: number,
+      isKnownContact: state['contactId'] != null,
+    );
+    if (!wanted) {
+      AppLog.d(_tag, 'overlay not shown (mode ${mode.name}, ${number == null ? 'number unknown' : 'unknown caller'})');
+      return;
+    }
+    if (!await overlay.isPermissionGranted()) return;
     try {
-      if (!await FlutterOverlayWindow.isActive()) {
-        await FlutterOverlayWindow.showOverlay(
-          // Top half of the screen: leaves the dialer's buttons usable and
-          // room below for the keyboard. Height is in physical pixels.
-          height: _overlayHeightPx(),
-          width: WindowSize.matchParent,
-          alignment: OverlayAlignment.topCenter,
-          // focusPointer lets the note field receive keyboard input while
-          // touches outside the window still reach the dialer.
-          flag: OverlayFlag.focusPointer,
-          enableDrag: true,
-          positionGravity: PositionGravity.none,
-          visibility: NotificationVisibility.visibilityPrivate,
-          overlayTitle: 'SmartBroker',
-          overlayContent: 'Call notes',
-        );
+      if (!await overlay.isActive()) {
+        // Top half of the screen: leaves the dialer's buttons usable and
+        // room below for the keyboard.
+        await overlay.show(heightPx: _overlayHeightPx());
       }
       await _notifyOverlay();
     } catch (e) {
-      debugPrint('CallMatchingService: could not show overlay: $e');
+      AppLog.w(_tag, 'could not show overlay', e);
     }
   }
 
@@ -194,17 +248,19 @@ class CallMatchingService {
     return (views.first.physicalSize.height * 0.5).round();
   }
 
-  Future<void> _updateOverlay(Map<String, dynamic> changes) async {
+  /// Merges [changes] into the shared call state and returns the result.
+  Future<Map<String, dynamic>> _updateOverlay(Map<String, dynamic> changes) async {
     final state = await CallOverlayState.read() ?? {};
     state.addAll(changes);
     await CallOverlayState.write(state);
     await _notifyOverlay();
+    return state;
   }
 
   /// Nudges the overlay to re-read the shared state right away (it also polls).
   Future<void> _notifyOverlay() async {
     try {
-      await FlutterOverlayWindow.shareData({'action': 'refresh'});
+      await overlay.shareData({'action': 'refresh'});
     } catch (_) {}
   }
 
@@ -253,19 +309,20 @@ class CallMatchingService {
   Future<Contact?> _logCall(CallEvent event) async {
     try {
       final normalizedNumber = PhoneContact.normalizePhoneNumber(event.phoneNumber);
-      debugPrint('CallMatchingService: processing call from $normalizedNumber (${event.type.name})');
+      AppLog.d(_tag, 'processing ${event.type.name} call from ${AppLog.maskPhone(normalizedNumber)}');
 
       if (normalizedNumber.isEmpty) {
-        debugPrint('CallMatchingService: empty phone number, skipping');
+        AppLog.d(_tag, 'empty phone number, skipping');
         return null;
       }
 
       Contact contact;
       final match = await _findContact(event.phoneNumber);
+      final isKnownContact = match != null;
       if (match != null) {
         contact = match.copyWith(lastInteraction: event.timestamp);
         await _contactRepo.update(contact);
-        debugPrint('CallMatchingService: matched to contact "${match.name}"');
+        AppLog.d(_tag, 'matched to contact ${match.id}');
       } else {
         // TODO: unknown numbers — decide between auto-creating and an "unassigned calls" inbox.
         final id = await _contactRepo.insert(Contact(
@@ -275,7 +332,7 @@ class CallMatchingService {
           lastInteraction: event.timestamp,
         ));
         contact = (await _contactRepo.getById(id))!;
-        debugPrint('CallMatchingService: created contact "$normalizedNumber" → $id');
+        AppLog.d(_tag, 'created contact $id for unknown caller');
       }
 
       final callId = await _callRepo.insert(CallEntry(
@@ -292,17 +349,21 @@ class CallMatchingService {
         duration: event.duration,
         timestamp: event.timestamp,
       );
-      debugPrint('CallMatchingService: logged ${event.type.name} call (${event.duration.inSeconds}s)');
+      AppLog.d(_tag, 'logged ${event.type.name} call (${event.duration.inSeconds}s)');
       _onCallLoggedController.add(callEntry);
 
-      final promptEnabled = await _settings.getPromptAfterCall();
-      final minDuration = await _settings.getMinCallDuration();
-      if (promptEnabled && event.type != CallType.missed && event.duration.inSeconds >= minDuration) {
-        await NotificationService().showPostCallPrompt(contact, callEntry);
-      }
+      final prompt = shouldPromptAfterCall(
+        promptEnabled: await _settings.getPromptAfterCall(),
+        mode: await _settings.getOverlayMode(),
+        type: event.type,
+        duration: event.duration,
+        minDuration: Duration(seconds: await _settings.getMinCallDuration()),
+        isKnownContact: isKnownContact,
+      );
+      if (prompt) await NotificationService().showPostCallPrompt(contact, callEntry);
       return contact;
     } catch (e) {
-      debugPrint('CallMatchingService: error processing call event: $e');
+      AppLog.e(_tag, 'error processing call event', e);
       return null;
     }
   }

@@ -2,6 +2,9 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../repositories/note_repository.dart';
+import 'app_log.dart';
+
 /// State shared between the main app and the call overlay.
 ///
 /// The overlay runs in its own Flutter engine (a separate isolate), so the two
@@ -91,6 +94,21 @@ class CallOverlayState {
       return {'contactId': contactId, 'rawText': text};
     } finally {
       _taking = false;
+    }
+  }
+
+  /// Saves a review taken with [takePendingReview] as a note (main app only).
+  /// Returns the note id, or null if the write failed — AI Review then gets
+  /// the text and saves it itself.
+  static Future<String?> savePendingNote(Map<String, dynamic> pending) async {
+    try {
+      return await NoteRepository().saveNote(
+        contactId: pending['contactId'] as String,
+        rawText: pending['rawText'] as String,
+      );
+    } catch (e, st) {
+      AppLog.e('CallOverlayState', 'could not save the note from the overlay', e, st);
+      return null;
     }
   }
 }

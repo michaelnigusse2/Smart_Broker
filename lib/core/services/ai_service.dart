@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 import '../../models/ai_result.dart';
 import 'ai_provider.dart';
 import 'ai_response_parser.dart';
+import 'app_log.dart';
 import 'api_key_service.dart';
 import 'settings_service.dart';
 
@@ -39,9 +40,12 @@ class AiService {
   final AiProvider provider;
   final String model;
   final String _apiKey;
+  final http.Client? _client;
 
-  AiService({required this.provider, required String apiKey, String? model})
+  /// [client] is for tests (e.g. `MockClient`); production uses a one-off client per call.
+  AiService({required this.provider, required String apiKey, String? model, http.Client? client})
       : _apiKey = apiKey,
+        _client = client,
         model = (model == null || model.trim().isEmpty) ? provider.defaultModel : model.trim();
 
   /// Builds a service from the provider, key and model saved in Settings.
@@ -93,9 +97,13 @@ class AiService {
   }
 
   Future<http.Response> _post(Map<String, dynamic> body) {
-    return http
-        .post(Uri.parse(provider.chatCompletionsUrl), headers: _headers, body: jsonEncode(body))
-        .timeout(_timeout);
+    final url = Uri.parse(provider.chatCompletionsUrl);
+    final encoded = jsonEncode(body);
+    final client = _client;
+    final request = client != null
+        ? client.post(url, headers: _headers, body: encoded)
+        : http.post(url, headers: _headers, body: encoded);
+    return request.timeout(_timeout);
   }
 
   /// Sends a tiny request to check the key and model. Returns 'valid' or an error description.
@@ -268,14 +276,19 @@ $pendingTodos''';
           if (content == null || content.trim().isEmpty) {
             throw Exception('API returned empty content');
           }
-          debugPrint('AiService [${provider.id}/$model] response: $content');
+          // Full text only in debug builds: it summarises the user's client notes.
+          AppLog.d('AiService', kDebugMode
+              ? '[${provider.id}/$model] response: $content'
+              : '[${provider.id}/$model] response (${content.length} chars)');
           return AiResponseParser.parse(content);
         } else if (response.statusCode == 401 || response.statusCode == 403) {
           throw AiException.invalidKey();
         } else if (response.statusCode == 429) {
           throw AiException.rateLimited();
         } else if (response.statusCode == 400 && useSchema) {
-          debugPrint('AiService: structured output rejected, retrying without it: ${response.body}');
+          final body = response.body;
+          AppLog.w('AiService', 'structured output rejected, retrying without it',
+              body.length > 300 ? body.substring(0, 300) : body);
           // The chosen model may not support structured output — retry without it.
           useSchema = false;
           attempts--;

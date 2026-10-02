@@ -1,5 +1,6 @@
-import 'package:sqflite/sqflite.dart';
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
+import 'package:sqflite/sqflite.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper _instance = DatabaseHelper._internal();
@@ -9,6 +10,13 @@ class DatabaseHelper {
   static const _fileName = 'smart_broker.db';
   static Database? _database;
 
+  /// Tests point this at [inMemoryDatabasePath] (with the ffi factory).
+  @visibleForTesting
+  static String? pathOverride;
+
+  static Future<String> _path() async =>
+      pathOverride ?? join(await getDatabasesPath(), _fileName);
+
   Future<Database> get database async {
     if (_database != null) return _database!;
     _database = await _initDatabase();
@@ -16,10 +24,8 @@ class DatabaseHelper {
   }
 
   Future<Database> _initDatabase() async {
-    final dbPath = await getDatabasesPath();
-    final path = join(dbPath, _fileName);
     return await openDatabase(
-      path,
+      await _path(),
       version: 1,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
@@ -119,6 +125,7 @@ class DatabaseHelper {
   static Future<void> deleteLocalDatabase() async {
     await _database?.close();
     _database = null;
-    await deleteDatabase(join(await getDatabasesPath(), _fileName));
+    final path = await _path();
+    if (path != inMemoryDatabasePath) await deleteDatabase(path);
   }
 }

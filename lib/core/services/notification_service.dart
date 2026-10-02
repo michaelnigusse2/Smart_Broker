@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
@@ -10,6 +9,7 @@ import '../../models/contact.dart';
 import '../../models/call_entry.dart';
 import '../constants/app_routes.dart';
 import 'call_overlay_state.dart';
+import 'app_log.dart';
 import '../utils/reminder_time.dart';
 
 class NotificationService {
@@ -38,7 +38,7 @@ class NotificationService {
       tz.setLocalLocation(tz.getLocation(timezoneInfo.identifier));
     } catch (e) {
       // Some ROMs report identifiers missing from the bundled tz database.
-      debugPrint('NotificationService: unknown timezone, using UTC ($e)');
+      AppLog.w('Notifications', 'unknown timezone, using UTC', e);
       tz.setLocalLocation(tz.UTC);
       timezoneFallback = true;
     }
@@ -87,7 +87,9 @@ class NotificationService {
       // A note already written in the call overlay goes straight to AI Review.
       final pending = await CallOverlayState.takePendingReview();
       if (pending != null) {
-        AppRoutes.globalNavigatorKey.currentState?.pushNamed(AppRoutes.aiReview, arguments: pending);
+        final noteId = await CallOverlayState.savePendingNote(pending);
+        AppRoutes.globalNavigatorKey.currentState
+            ?.pushNamed(AppRoutes.aiReview, arguments: {...pending, 'noteId': ?noteId});
         return;
       }
       if (CallOverlayState.tookRecently) return; // AI Review was just opened on resume.
@@ -178,7 +180,7 @@ class NotificationService {
       );
       return true;
     } catch (e) {
-      debugPrint('NotificationService: failed to schedule reminder: $e');
+      AppLog.w('Notifications', 'failed to schedule reminder ${reminder.id}', e);
       return false;
     }
   }

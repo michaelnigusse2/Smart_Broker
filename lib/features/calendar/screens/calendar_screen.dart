@@ -489,7 +489,7 @@ class _AddReminderSheetState extends State<_AddReminderSheet> {
                         firstDate: DateTime(2000),
                         lastDate: DateTime(2100),
                       );
-                      if (date != null) setState(() => _selectedDate = date);
+                      if (date != null && mounted) setState(() => _selectedDate = date);
                     },
                     child: InputDecorator(
                       decoration: const InputDecoration(labelText: 'Date', border: OutlineInputBorder()),
@@ -505,7 +505,7 @@ class _AddReminderSheetState extends State<_AddReminderSheet> {
                         context: context,
                         initialTime: _selectedTime,
                       );
-                      if (time != null) setState(() => _selectedTime = time);
+                      if (time != null && mounted) setState(() => _selectedTime = time);
                     },
                     child: InputDecorator(
                       decoration: const InputDecoration(labelText: 'Time', border: OutlineInputBorder()),

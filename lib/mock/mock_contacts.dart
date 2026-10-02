@@ -1,11 +1,12 @@
 import '../models/contact.dart';
 
+// Fictional people: example.com emails, +2519000000xx / 555 numbers.
 final mockContacts = [
   Contact(
     id: 'c1',
-    name: 'Michael Nigusse',
-    phoneNumber: '+251900000000',
-    email: 'michael@hilcoeschool.com',
+    name: 'Sara Bekele',
+    phoneNumber: '+251900000001',
+    email: 'sara@example.com',
     company: 'TechCorp',
     role: 'CTO',
     lastInteraction: DateTime.now().subtract(const Duration(hours: 2)),
@@ -13,9 +14,9 @@ final mockContacts = [
   ),
   Contact(
     id: 'c2',
-    name: 'Manal Mehdi',
-    phoneNumber: '+251900000000',
-    email: 'manal@hilcoeschool.com',
+    name: 'Dawit Alemu',
+    phoneNumber: '+251900000002',
+    email: 'dawit@example.com',
     company: 'Innovate IO',
     role: 'Product Manager',
     lastInteraction: DateTime.now().subtract(const Duration(days: 1)),
@@ -23,9 +24,9 @@ final mockContacts = [
   ),
   Contact(
     id: 'c3',
-    name: 'Leul Mesfin',
-    phoneNumber: '+251900000000',
-    email: 'leul@hilcoeschool.com',
+    name: 'Elena Tadesse',
+    phoneNumber: '+251900000003',
+    email: 'elena@example.com',
     company: 'Startup Net',
     role: 'Founder',
     lastInteraction: DateTime.now().subtract(const Duration(days: 3)),
@@ -33,9 +34,9 @@ final mockContacts = [
   ),
   Contact(
     id: 'c4',
-    name: 'Semuel Getnet',
-    phoneNumber: '+251900000000',
-    email: 'semuel@hilcoeschool.com',
+    name: 'Samuel Girma',
+    phoneNumber: '+251900000004',
+    email: 'samuel@example.com',
     company: 'Enterprise Solutions',
     role: 'VP Sales',
     lastInteraction: DateTime.now().subtract(const Duration(days: 5)),
@@ -43,17 +44,17 @@ final mockContacts = [
   ),
   Contact(
     id: 'c5',
-    name: 'Yom Fisseha',
-    phoneNumber: '  +251900000000',
-    email: 'yom@hilcoeschool.com',
+    name: 'Meron Kebede',
+    phoneNumber: '  +251900000005', // stray spaces on purpose
+    email: 'meron@example.com',
     lastInteraction: DateTime.now().subtract(const Duration(days: 7)),
     pendingTasksCount: 0,
   ),
   Contact(
     id: 'c6',
-    name: 'Mikiyas Afework',
-    phoneNumber: '+251900000000',
-    email: 'mikiyas@hilcoeschool.com',
+    name: 'Yonas Desta',
+    phoneNumber: '+251900000006',
+    email: 'yonas@example.com',
     company: 'Global Logistics',
     lastInteraction: DateTime.now().subtract(const Duration(days: 10)),
     pendingTasksCount: 1,
@@ -69,7 +70,7 @@ final mockContacts = [
     id: 'c8',
     name: 'Jessica Taylor',
     phoneNumber: '+1 (555) 444-5555',
-    email: 'jtaylor@designstudio.com',
+    email: 'jessica@example.com',
     company: 'Design Studio',
     role: 'Lead Designer',
     lastInteraction: DateTime.now().subtract(const Duration(days: 14)),

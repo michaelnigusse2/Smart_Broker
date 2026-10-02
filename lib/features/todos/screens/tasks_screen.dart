@@ -22,8 +22,8 @@ class _TasksScreenState extends State<TasksScreen> {
   List<TodoWithContact> _todos = [];
   bool _isLoading = true;
   
-  String _activeFilter = 'all'; // 'all', 'pending', 'completed', 'overdue'
-  String _activeSort = 'createdAt'; // 'createdAt', 'contact'
+  TaskFilter _activeFilter = TaskFilter.all;
+  TaskSort _activeSort = TaskSort.createdAt;
   
   bool _isBulkMode = false;
   final Set<String> _selectedIds = {};
@@ -37,9 +37,11 @@ class _TasksScreenState extends State<TasksScreen> {
   Future<void> _loadTodos() async {
     if (!mounted) return;
     setState(() => _isLoading = true);
-    final String? filterArg = _activeFilter == 'all' ? null : _activeFilter;
-    final todos = await _todoRepo.getAll(filter: filterArg, sortBy: _activeSort);
-    if (mounted) {
+    final filter = _activeFilter;
+    final sort = _activeSort;
+    final todos = await _todoRepo.getAll(filter: filter, sortBy: sort);
+    // Ignore results of a query that the user has already switched away from.
+    if (mounted && filter == _activeFilter && sort == _activeSort) {
       setState(() {
         _todos = todos;
         _isLoading = false;
@@ -47,7 +49,7 @@ class _TasksScreenState extends State<TasksScreen> {
     }
   }
 
-  void _toggleFilter(String filter) {
+  void _toggleFilter(TaskFilter filter) {
     if (_activeFilter == filter) return;
     setState(() {
       _activeFilter = filter;
@@ -59,7 +61,7 @@ class _TasksScreenState extends State<TasksScreen> {
 
   void _toggleSort() {
     setState(() {
-      _activeSort = _activeSort == 'createdAt' ? 'contact' : 'createdAt';
+      _activeSort = _activeSort == TaskSort.createdAt ? TaskSort.contact : TaskSort.createdAt;
     });
     _loadTodos();
   }
@@ -223,19 +225,19 @@ class _TasksScreenState extends State<TasksScreen> {
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
         children: [
-          _buildFilterChip('All', 'all'),
+          _buildFilterChip('All', TaskFilter.all),
           const SizedBox(width: AppSpacing.sm),
-          _buildFilterChip('Pending', 'pending'),
+          _buildFilterChip('Pending', TaskFilter.pending),
           const SizedBox(width: AppSpacing.sm),
-          _buildFilterChip('Completed', 'completed'),
+          _buildFilterChip('Completed', TaskFilter.completed),
           const SizedBox(width: AppSpacing.sm),
-          _buildFilterChip('Overdue', 'overdue'),
+          _buildFilterChip('Overdue', TaskFilter.overdue),
         ],
       ),
     );
   }
 
-  Widget _buildFilterChip(String label, String filterValue) {
+  Widget _buildFilterChip(String label, TaskFilter filterValue) {
     final isActive = _activeFilter == filterValue;
     return ChoiceChip(
       label: Text(label),
@@ -269,7 +271,7 @@ class _TasksScreenState extends State<TasksScreen> {
             onPressed: _toggleSort,
             icon: const Icon(LucideIcons.arrowDownWideNarrow, size: 16, color: AppColors.textSecondary),
             label: Text(
-              'Sort: ${_activeSort == 'createdAt' ? 'Newest' : 'Contact'}',
+              'Sort: ${_activeSort == TaskSort.createdAt ? 'Newest' : 'Contact'}',
               style: const TextStyle(color: AppColors.textSecondary),
             ),
             style: TextButton.styleFrom(
@@ -293,7 +295,7 @@ class _TasksScreenState extends State<TasksScreen> {
       );
     }
 
-    if (_activeFilter == 'all') {
+    if (_activeFilter == TaskFilter.all) {
       final pending = _todos.where((t) => !t.isCompleted).toList();
       final completed = _todos.where((t) => t.isCompleted).toList();
       

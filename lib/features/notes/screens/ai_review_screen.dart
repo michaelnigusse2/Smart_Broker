@@ -6,17 +6,15 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/constrained_layout.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/info_chip.dart';
-import '../../../models/todo_item.dart';
-import '../../../models/note.dart';
-import '../../../models/reminder.dart';
 import '../../../core/repositories/note_repository.dart';
 import '../../../core/repositories/todo_repository.dart';
-import '../../../core/repositories/reminder_repository.dart';
 import '../../../core/repositories/contact_repository.dart';
 import '../../../core/services/ai_service.dart';
-import '../../../core/services/notification_service.dart';
+import '../../../core/services/app_log.dart';
+import '../../../core/services/note_save_service.dart';
 import '../../../core/services/overlay_draft_service.dart';
 import '../../../core/utils/reminder_time.dart';
+import '../../../core/widgets/ai_consent_dialog.dart';
 import '../../../core/widgets/past_reminder_dialog.dart';
 import '../../../core/constants/app_routes.dart';
 
@@ -35,7 +33,6 @@ class _AiReviewScreenState extends State<AiReviewScreen> {
 
   final NoteRepository _noteRepo = NoteRepository();
   final TodoRepository _todoRepo = TodoRepository();
-  final ReminderRepository _reminderRepo = ReminderRepository();
   final ContactRepository _contactRepo = ContactRepository();
   
   late final TextEditingController _summaryController;
@@ -86,10 +83,30 @@ class _AiReviewScreenState extends State<AiReviewScreen> {
   }
 
   Future<void> _checkApiKeyAndAnalyze() async {
+    // The note is saved before any AI call so it can never be lost.
+    if (_noteId == null && _contactId != null && _rawText != null) {
+      try {
+        _noteId = await _noteRepo.saveNote(contactId: _contactId!, rawText: _rawText!);
+        await OverlayDraftService().clearDraft(_contactId!);
+      } catch (e, st) {
+        AppLog.e('AiReview', 'could not save note', e, st);
+        if (!mounted) return;
+        setState(() {
+          _aiError = 'Could not save the note: $e';
+          _isProcessing = false;
+        });
+        return;
+      }
+    }
     final aiService = await AiService.fromSettings();
+    if (!mounted) return;
     if (aiService == null) {
-      if (!mounted) return;
       _showNoKeyDialog();
+      return;
+    }
+    if (!await ensureAiConsent(context, aiService.provider)) {
+      if (!mounted) return;
+      _keepWithoutAi('Note saved — AI Review skipped, nothing was sent');
       return;
     }
     _analyzeNote(aiService);
@@ -113,11 +130,23 @@ class _AiReviewScreenState extends State<AiReviewScreen> {
       final contact = await _contactRepo.getById(_contactId!);
       final contactName = contact?.name ?? 'Unknown';
 
+      // Background = other notes only. This note is already saved (and may
+      // have an older summary if it's being re-reviewed).
       final previousNotes = await _noteRepo.getByContactId(_contactId!);
-      final previousSummaries = previousNotes.take(3).map((n) => n.aiSummary).join('\n');
+      final previousSummaries = previousNotes
+          .where((n) => n.id != _noteId && n.aiSummary.isNotEmpty)
+          .take(3)
+          .map((n) => n.aiSummary)
+          .join('\n');
 
+      // Exclude this note's own tasks: the model is told not to repeat
+      // existing tasks, and on a re-review it must be free to list them again
+      // or they would be treated as dropped.
       final pendingTodosList = await _todoRepo.getByContactId(_contactId!);
-      final pendingTodos = pendingTodosList.where((t) => !t.isCompleted).map((t) => t.title).join('\n');
+      final pendingTodos = pendingTodosList
+          .where((t) => !t.isCompleted && t.noteId != _noteId)
+          .map((t) => t.title)
+          .join('\n');
 
       final result = await aiService.analyzeNote(
         contactName: contactName,
@@ -169,9 +198,9 @@ class _AiReviewScreenState extends State<AiReviewScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
-              Navigator.pop(context); // Go back to note screen
+              _keepWithoutAi();
             },
-            child: const Text('Skip for now'),
+            child: const Text('Keep note without AI'),
           ),
           ElevatedButton(
             onPressed: () {
@@ -212,13 +241,32 @@ class _AiReviewScreenState extends State<AiReviewScreen> {
       context: context,
       initialTime: TimeOfDay.fromDateTime(_reminderDateTime),
     );
-    if (time == null) return;
+    if (time == null || !mounted) return;
 
     setState(() {
       _reminderDateTime = DateTime(
         date.year, date.month, date.day, time.hour, time.minute
       );
     });
+  }
+
+  List<String> get _taskTitles => _taskControllers
+      .map((c) => c.text.trim())
+      .where((t) => t.isNotEmpty)
+      .toList();
+
+  /// Leaves AI Review and the note editor, back to where the note was started.
+  void _finish() {
+    Navigator.popUntil(context, (route) {
+      final name = route.settings.name;
+      return name != AppRoutes.aiReview && name != AppRoutes.addNote;
+    });
+  }
+
+  /// The note is already saved; leave without an AI summary.
+  void _keepWithoutAi([String message = 'Note saved without an AI summary']) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    _finish();
   }
 
   Future<void> _saveToProfile() async {
@@ -231,12 +279,29 @@ class _AiReviewScreenState extends State<AiReviewScreen> {
       if (!mounted) return;
     }
 
-    // Show summary confirmation
+    // Show what will change, including tasks an earlier review created that
+    // this one no longer lists (completed tasks are always kept).
+    final removed = await NoteSaveService().openTasksThatWouldBeRemoved(_noteId!, _taskTitles);
+    if (!mounted) return;
+    final taskCount = _taskTitles.length;
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Save to Profile?'),
-        content: Text('This will create 1 note, ${_taskControllers.length} tasks, and ${_includeReminder ? "1 reminder" : "0 reminders"}.'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('This saves the summary, $taskCount ${taskCount == 1 ? "task" : "tasks"}'
+                '${_includeReminder ? " and a reminder" : ""}.'),
+            if (removed.isNotEmpty) ...[
+              const SizedBox(height: AppSpacing.md),
+              const Text('These open tasks from the earlier review will be removed:'),
+              const SizedBox(height: AppSpacing.xs),
+              ...removed.map((t) => Text('•  ${t.title}')),
+            ],
+          ],
+        ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
@@ -252,86 +317,24 @@ class _AiReviewScreenState extends State<AiReviewScreen> {
     });
 
     try {
-      String finalNoteId;
+      final typedTitle = _reminderTitleController.text.trim();
+      final reminderTitle = typedTitle.isNotEmpty
+          ? typedTitle
+          : _summaryController.text.isNotEmpty
+              ? 'Follow up: ${_summaryController.text.split('.').first}'
+              : 'Follow up reminder';
 
-      if (_noteId == null) {
-        final note = Note(
-          id: '',
-          contactId: _contactId!,
-          rawText: _rawText!,
-          aiSummary: _summaryController.text.trim(),
-          createdAt: DateTime.now(),
-        );
-        finalNoteId = await _noteRepo.insert(note);
-      } else {
-        finalNoteId = _noteId!;
-        final existingNote = await _noteRepo.getById(finalNoteId);
-        if (existingNote != null) {
-          await _noteRepo.update(existingNote.copyWith(
-            rawText: _rawText!,
-            aiSummary: _summaryController.text.trim(),
-          ));
-        }
-
-        final oldTodos = await _todoRepo.getByNoteId(finalNoteId);
-        for (final t in oldTodos) {
-          await _todoRepo.delete(t.id);
-        }
-        final oldReminders = await _reminderRepo.getByNoteId(finalNoteId);
-        for (final r in oldReminders) {
-          await NotificationService().cancelReminder(r.id);
-          await _reminderRepo.delete(r.id);
-        }
-      }
-
-      for (final controller in _taskControllers) {
-        final title = controller.text.trim();
-        if (title.isNotEmpty) {
-          final todo = TodoItem(
-            id: '',
-            contactId: _contactId!,
-            noteId: finalNoteId,
-            title: title,
-            createdAt: DateTime.now(),
-          );
-          await _todoRepo.insert(todo);
-        }
-      }
-
-      if (_includeReminder) {
-        final typedTitle = _reminderTitleController.text.trim();
-        final title = typedTitle.isNotEmpty
-            ? typedTitle
-            : _summaryController.text.isNotEmpty
-                ? 'Follow up: ${_summaryController.text.split('.').first}'
-                : 'Follow up reminder';
-        
-        final reminder = Reminder(
-          id: '',
-          contactId: _contactId!,
-          noteId: finalNoteId,
-          title: title,
-          dateTime: _reminderDateTime,
-          createdAt: DateTime.now(),
-        );
-        final reminderId = await _reminderRepo.insert(reminder);
-        await NotificationService().scheduleReminder(reminder.copyWith(id: reminderId));
-      }
-
-      // Mark the contact as recently active and clear any saved call draft.
-      final contact = await _contactRepo.getById(_contactId!);
-      if (contact != null) {
-        await _contactRepo.update(contact.copyWith(lastInteraction: DateTime.now()));
-      }
+      await NoteSaveService().apply(ReviewedNote(
+        noteId: _noteId!,
+        contactId: _contactId!,
+        rawText: _rawText!,
+        summary: _summaryController.text.trim(),
+        taskTitles: _taskTitles,
+        reminder: _includeReminder ? (title: reminderTitle, dateTime: _reminderDateTime) : null,
+      ));
       await OverlayDraftService().clearDraft(_contactId!);
 
-      if (mounted) {
-        // Return to wherever the note was started from (contact, note, or home).
-        Navigator.popUntil(context, (route) {
-          final name = route.settings.name;
-          return name != AppRoutes.aiReview && name != AppRoutes.addNote;
-        });
-      }
+      if (mounted) _finish();
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -396,6 +399,11 @@ class _AiReviewScreenState extends State<AiReviewScreen> {
                             icon: const Icon(LucideIcons.refreshCw, size: 18),
                             label: const Text('Retry'),
                             onPressed: () => _checkApiKeyAndAnalyze(),
+                          ),
+                          const SizedBox(height: AppSpacing.sm),
+                          TextButton(
+                            onPressed: _keepWithoutAi,
+                            child: const Text('Keep note without AI'),
                           ),
                         ],
                       ),

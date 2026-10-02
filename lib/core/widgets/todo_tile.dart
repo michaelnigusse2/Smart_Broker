@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import '../../models/todo_item.dart';
 import '../theme/app_theme.dart';
+import 'text_prompt.dart';
 
 class TodoTile extends StatelessWidget {
   final TodoItem todo;
@@ -145,46 +146,15 @@ class TodoTile extends StatelessWidget {
     );
   }
 
-  void _showEditDialog(BuildContext context) {
+  Future<void> _showEditDialog(BuildContext context) async {
     if (onEdit == null) return;
-    
-    final controller = TextEditingController(text: todo.title);
-    
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Edit Task'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(
-            hintText: 'Task title',
-          ),
-          textCapitalization: TextCapitalization.sentences,
-          onSubmitted: (value) {
-            if (value.trim().isNotEmpty) {
-              Navigator.pop(context);
-              onEdit!(value.trim());
-            }
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              if (controller.text.trim().isNotEmpty) {
-                Navigator.pop(context);
-                onEdit!(controller.text.trim());
-              }
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
+    final title = await showTextPromptDialog(
+      context,
+      title: 'Edit Task',
+      initialText: todo.title,
+      hint: 'Task title',
     );
+    if (title != null) onEdit!(title);
   }
 
   void _confirmDelete(BuildContext context) {
