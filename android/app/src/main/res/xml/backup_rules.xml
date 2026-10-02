@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 and lower. Keep in sync with data_extraction_rules.xml. -->
+<full-backup-content>
+    <!-- Contacts, notes, tasks, reminders, calls -->
+    <include domain="database" path="smart_broker.db" />
+    <!-- Settings (provider, model, call detection, AI consent) -->
+    <include domain="sharedpref" path="." />
+    <!-- API keys are encrypted with a device-bound key that is not backed up;
+         restoring them on another phone would make them unreadable. -->
+    <exclude domain="sharedpref" path="FlutterSecureStorage.xml" />
+</full-backup-content>

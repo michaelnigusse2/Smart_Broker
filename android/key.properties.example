@@ -1,0 +1,6 @@
+# Copy to android/key.properties (gitignored) and fill in. See docs/RELEASE.md.
+# Use an absolute path for storeFile, outside the repository.
+storeFile=C:\\Users\\YOU\\keys\\smartbroker-release.jks
+storePassword=CHANGE_ME
+keyAlias=smartbroker
+keyPassword=CHANGE_ME
