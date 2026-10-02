@@ -101,7 +101,7 @@ lib/
 ├── mock/                     # Demo data used by SeedData on first launch
 └── models/                   # Domain models
 android/app/src/main/kotlin/… # CallDetectionService.kt, CallDetectionPlugin.kt
-test/                         # Unit tests (call detection, AI response parsing)
+test/                         # Unit + repository tests (in-memory SQLite via sqflite_common_ffi)
 ```
 
 ### Data model
@@ -117,13 +117,33 @@ back to the note that created them (`noteId`). Deleting a contact cascades.
 flutter pub get
 flutter run          # pick an Android device/emulator for call features
 flutter analyze
-flutter test
+flutter test --coverage
+dart format lib test   # page width 120, see analysis_options.yaml
 ```
+
+Repository tests run against an in-memory SQLite database (`test/helpers/test_db.dart`),
+so they don't need a device. Use fictional names and numbers in tests.
+
+### CI
+
+`.github/workflows/ci.yml` runs on every push and pull request: format check →
+`flutter analyze --fatal-infos` → `flutter test --coverage` → coverage gate
+(`tool/coverage_gate.sh`, 40 % for now) → dead-handler scan (`tool/no_dead_handlers.sh`,
+warning only for now) → debug APK, uploaded as a build artifact. A weekly workflow posts
+`flutter pub outdated` to an issue. Protect `main` by requiring the `flutter` job.
+
+On Windows without a terminal, `tool/dev_runner.bat` runs a fixed set of these commands
+when asked (`build_logs/request.txt` → `build_logs/result.log`).
 
 Call detection and the overlay only work on a real Android device. Use
 **Settings → Developer Tools → Simulate Call** to test the call-logging flow without one.
 
 > After changing enums or `main.dart`, use hot restart (`R`), not hot reload.
+
+Debug builds fill an empty database with fictional demo data (also available via
+Settings → Developer Tools → Load demo data). Release builds start empty.
+
+Release builds and signing: see [docs/RELEASE.md](docs/RELEASE.md).
 
 ---
 
@@ -135,6 +155,8 @@ Call detection and the overlay only work on a real Android device. Use
   SmartBroker (or tap the post-call notification) and AI Review opens automatically.
 - For outgoing calls the caller's name appears in the overlay only when the call ends.
 - Unknown numbers are auto-created as contacts (an "unassigned calls" inbox is planned).
+  By default the live overlay and the post-call prompt only appear for numbers that are
+  already contacts (Settings → Live call overlay: Contacts / All calls / Off).
 - "Add contact" and the contact "⋯" menu are placeholders; the Notes list screen has no entry point.
 - The home greeting name is hardcoded.
 
