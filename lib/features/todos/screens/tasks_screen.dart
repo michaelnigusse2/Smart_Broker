@@ -303,7 +303,7 @@ class _TasksScreenState extends State<TasksScreen> {
       final completed = _todos.where((t) => t.isCompleted).toList();
 
       return ListView(
-        padding: const EdgeInsets.all(AppSpacing.md),
+        padding: _listPadding,
         children: [
           if (pending.isNotEmpty) ...[
             _buildSectionHeader('${pending.length} Pending'),
@@ -319,13 +319,16 @@ class _TasksScreenState extends State<TasksScreen> {
     }
 
     return ListView.builder(
-      padding: const EdgeInsets.all(AppSpacing.md),
+      padding: _listPadding,
       itemCount: _todos.length,
       itemBuilder: (context, index) {
         return _buildTodoTile(_todos[index]);
       },
     );
   }
+
+  /// Extra bottom space so the last task can scroll clear of the add button.
+  static const _listPadding = EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.md, AppSpacing.md, 96);
 
   Widget _buildSectionHeader(String title) {
     return Padding(

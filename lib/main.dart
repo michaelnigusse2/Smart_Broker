@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io' show Platform;
 import 'dart:ui' show PlatformDispatcher;
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 
@@ -33,7 +34,9 @@ void main() {
     WidgetsFlutterBinding.ensureInitialized();
     FlutterError.onError = (details) {
       FlutterError.presentError(details);
-      AppLog.e('Flutter', details.exceptionAsString(), null, details.stack);
+      // Debug builds log the full report (it names the widget and source line,
+      // e.g. which Row overflowed); release keeps it to one line.
+      AppLog.e('Flutter', kDebugMode ? details.toString() : details.exceptionAsString(), null, details.stack);
     };
     PlatformDispatcher.instance.onError = (error, stack) {
       AppLog.e('Platform', 'uncaught error', error, stack);

@@ -50,6 +50,7 @@ if /i "%ACTION%"=="formatfix" goto do_formatfix
 if /i "%ACTION%"=="build"   goto do_build
 if /i "%ACTION%"=="release" goto do_release
 if /i "%ACTION%"=="all"     goto do_all
+if /i "%ACTION%"=="emubuild" goto do_emubuild
 echo unknown action ignored>> "%LOG%"
 goto finish
 
@@ -127,6 +128,15 @@ call "%FLUTTER%" test >> "%LOG%" 2>&1
 >> "%LOG%" echo exit_test=%errorlevel%
 echo ===== flutter build apk --debug>> "%LOG%"
 call "%FLUTTER%" build apk --debug >> "%LOG%" 2>&1
+>> "%LOG%" echo exit_build=%errorlevel%
+goto finish
+
+:do_emubuild
+rem Debug APK with only the x86_64 engine: about a third of the size, for the emulator.
+rem Debug builds package incrementally and the APK keeps growing; start fresh.
+if exist "build\app\outputs\apk\debug\app-debug.apk" del "build\app\outputs\apk\debug\app-debug.apk"
+echo ===== flutter build apk --debug --target-platform android-x64>> "%LOG%"
+call "%FLUTTER%" build apk --debug --target-platform android-x64 >> "%LOG%" 2>&1
 >> "%LOG%" echo exit_build=%errorlevel%
 goto finish
 

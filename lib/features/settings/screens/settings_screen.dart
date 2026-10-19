@@ -536,7 +536,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text('Minimum call duration'),
+                            const Expanded(child: Text('Minimum call duration')),
                             Text('$_minCallDuration seconds', style: const TextStyle(fontWeight: FontWeight.w500)),
                           ],
                         ),
@@ -651,7 +651,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 style: TextStyle(color: AppColors.textTertiary, fontSize: 12),
               ),
             ),
-            const SizedBox(height: AppSpacing.xl),
+            // Space for the floating nav bar, so the last rows can scroll clear of it.
+            const SizedBox(height: 100),
           ],
         ),
       ),

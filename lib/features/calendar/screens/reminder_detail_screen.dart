@@ -300,12 +300,14 @@ class _ReminderDetailScreenState extends State<ReminderDetailScreen> {
                             children: [
                               Icon(LucideIcons.calendar, size: 20, color: AppColors.primary),
                               const SizedBox(width: AppSpacing.md),
-                              Text(
-                                DateFormat(
-                                  'EEEE, MMM d, yyyy',
-                                ).add_jm().format(_isEditing ? _editedDateTime! : _reminder!.dateTime),
-                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  color: AppColors.primary,
+                              Expanded(
+                                child: Text(
+                                  DateFormat(
+                                    'EEEE, MMM d, yyyy',
+                                  ).add_jm().format(_isEditing ? _editedDateTime! : _reminder!.dateTime),
+                                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    color: AppColors.primary,
+                                  ),
                                 ),
                               ),
                             ],

@@ -1,9 +1,9 @@
 @echo off
 rem ---------------------------------------------------------------------------
-rem SmartBroker emulator bridge (for remote demos and testing).
+rem SmartBroker emulator bridge (remote demos and UI checks).
 rem
-rem Watches build_logs\adb_request.txt for ONE command per request and sends
-rem it to the running Android emulator with adb. Only these commands exist:
+rem Watches build_logs\emu_request.txt for ONE command per request and sends it
+rem to the running Android emulator with adb. Only these commands exist:
 rem   screen               screenshot -> build_logs\screen.png
 rem   dump                 UI tree    -> build_logs\ui.xml
 rem   tap X Y              tap at pixel X,Y
@@ -11,6 +11,10 @@ rem   swipe X1 Y1 X2 Y2    swipe
 rem   text WORD            type letters/digits (no spaces; use "key space")
 rem   key back|home|enter|space|del
 rem   launch               open SmartBroker
+rem   install              install the debug APK again and open the app
+rem   logcat               Flutter log since the last "logcat" -> build_logs\logcat.txt
+rem   font 0.85|1.0|1.15|1.3|1.5   system font size
+rem   density reset|NUMBER system display size (dpi)
 rem Anything else is ignored. Close this window to stop.
 rem ---------------------------------------------------------------------------
 setlocal EnableDelayedExpansion
@@ -19,8 +23,9 @@ if not exist build_logs mkdir build_logs
 set "SDK=%LOCALAPPDATA%\Android\Sdk"
 if defined ANDROID_HOME set "SDK=%ANDROID_HOME%"
 set "ADB=%SDK%\platform-tools\adb.exe"
-set "REQ=build_logs\adb_request.txt"
-set "LOG=build_logs\adb.log"
+set "APK=build\app\outputs\flutter-apk\app-debug.apk"
+set "REQ=build_logs\emu_request.txt"
+set "LOG=build_logs\emu.log"
 echo SmartBroker emulator bridge is watching %REQ%
 echo Close this window to stop.
 echo started=%date% %time%> "%LOG%"
@@ -45,13 +50,19 @@ for /f "tokens=1-5" %%a in ("!LINE!") do (
   set "P4=%%e"
 )
 echo [%time%] !CMD! !P1! !P2! !P3! !P4!
-if /i "!CMD!"=="screen" goto do_screen
-if /i "!CMD!"=="dump"   goto do_dump
-if /i "!CMD!"=="tap"    goto do_tap
-if /i "!CMD!"=="swipe"  goto do_swipe
-if /i "!CMD!"=="text"   goto do_text
-if /i "!CMD!"=="key"    goto do_key
-if /i "!CMD!"=="launch" goto do_launch
+if /i "!CMD!"=="screen"  goto do_screen
+if /i "!CMD!"=="dump"    goto do_dump
+if /i "!CMD!"=="tap"     goto do_tap
+if /i "!CMD!"=="swipe"   goto do_swipe
+if /i "!CMD!"=="text"    goto do_text
+if /i "!CMD!"=="key"     goto do_key
+if /i "!CMD!"=="launch"  goto do_launch
+if /i "!CMD!"=="install" goto do_install
+if /i "!CMD!"=="logcat"  goto do_logcat
+if /i "!CMD!"=="font"    goto do_font
+if /i "!CMD!"=="density" goto do_density
+if /i "!CMD!"=="storage" goto do_storage
+if /i "!CMD!"=="reinstall" goto do_reinstall
 call :done "ignored"
 exit /b 0
 
@@ -83,8 +94,8 @@ call :done "swipe"
 exit /b 0
 
 :do_text
-echo(!P1!| findstr /r /x "[A-Za-z0-9+@.]*" >nul || (call :done "bad text" & exit /b 0)
 if "!P1!"=="" (call :done "bad text" & exit /b 0)
+echo(!P1!| findstr /r /x "[A-Za-z0-9+@.]*" >nul || (call :done "bad text" & exit /b 0)
 "%ADB%" -e shell input text !P1! >> "%LOG%" 2>&1
 call :done "text"
 exit /b 0
@@ -106,6 +117,55 @@ exit /b 0
 call :done "launch"
 exit /b 0
 
+:do_install
+"%ADB%" -e install -r "%APK%" >> "%LOG%" 2>&1
+if errorlevel 1 (
+  echo install failed, clearing emulator caches and retrying>> "%LOG%"
+  "%ADB%" -e shell pm trim-caches 64G >> "%LOG%" 2>&1
+  "%ADB%" -e install -r "%APK%" >> "%LOG%" 2>&1
+)
+"%ADB%" -e shell monkey -p com.smartbroker.smart_broker -c android.intent.category.LAUNCHER 1 >nul 2>> "%LOG%"
+call :done "install"
+exit /b 0
+
+:do_reinstall
+rem Removes SmartBroker and its data from the emulator first (frees space).
+"%ADB%" -e uninstall com.smartbroker.smart_broker >> "%LOG%" 2>&1
+"%ADB%" -e install "%APK%" >> "%LOG%" 2>&1
+"%ADB%" -e shell monkey -p com.smartbroker.smart_broker -c android.intent.category.LAUNCHER 1 >nul 2>> "%LOG%"
+call :done "reinstall"
+exit /b 0
+
+:do_logcat
+"%ADB%" -e logcat -d -v time -s flutter:V AndroidRuntime:E > build_logs\logcat.txt 2>> "%LOG%"
+"%ADB%" -e logcat -c >> "%LOG%" 2>&1
+call :done "logcat"
+exit /b 0
+
+:do_font
+set "OK="
+for %%v in (0.85 1.0 1.15 1.3 1.5) do if "!P1!"=="%%v" set "OK=1"
+if not defined OK (call :done "bad font" & exit /b 0)
+"%ADB%" -e shell settings put system font_scale !P1! >> "%LOG%" 2>&1
+call :done "font"
+exit /b 0
+
+:do_density
+if /i "!P1!"=="reset" (
+  "%ADB%" -e shell wm density reset >> "%LOG%" 2>&1
+  call :done "density"
+  exit /b 0
+)
+call :num "!P1!" || exit /b 0
+"%ADB%" -e shell wm density !P1! >> "%LOG%" 2>&1
+call :done "density"
+exit /b 0
+
+:do_storage
+"%ADB%" -e shell df -h /data > build_logs\storage.txt 2>> "%LOG%"
+call :done "storage"
+exit /b 0
+
 :num
 echo(%~1| findstr /r /x "[0-9][0-9]*" >nul && exit /b 0
 call :done "bad number"
@@ -113,5 +173,5 @@ exit /b 1
 
 :done
 >> "%LOG%" echo [%time%] %~1
-echo %~1 %time%> build_logs\adb_done.txt
+echo %~1 %time%> build_logs\emu_done.txt
 exit /b 0

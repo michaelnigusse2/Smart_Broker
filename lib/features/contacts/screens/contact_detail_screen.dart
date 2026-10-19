@@ -232,9 +232,12 @@ class _ContactDetailScreenState extends State<ContactDetailScreen> {
                           children: [
                             Icon(LucideIcons.phone, size: 14, color: AppColors.textSecondary),
                             const SizedBox(width: AppSpacing.xs),
-                            Text(
-                              contact.phoneNumber.trim(),
-                              style: theme.textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary),
+                            Flexible(
+                              child: Text(
+                                contact.phoneNumber.trim(),
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary),
+                              ),
                             ),
                           ],
                         ),
@@ -526,12 +529,15 @@ class _NotesList extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
+                      // Date drops under the chip when both don't fit on one line.
+                      Wrap(
+                        spacing: AppSpacing.sm,
+                        runSpacing: AppSpacing.xs,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           note.aiSummary.isEmpty
                               ? const InfoChip(label: 'Not processed', color: AppColors.textSecondary)
                               : const InfoChip(label: 'AI Summary', color: AppColors.primary),
-                          const SizedBox(width: AppSpacing.sm),
                           Text(
                             DateFormat.yMMMd().format(note.createdAt),
                             style: theme.textTheme.labelSmall,
@@ -730,24 +736,26 @@ class _CallsList extends StatelessWidget {
               children: [
                 Icon(callIcon, color: callColor, size: 16),
                 const SizedBox(width: AppSpacing.md),
+                // Type above date, so neither has to squeeze into one line.
                 Expanded(
-                  child: Text(
-                    call.type.name.capitalize(),
-                    style: theme.textTheme.bodyMedium?.copyWith(color: AppColors.textPrimary),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        call.type.name.capitalize(),
+                        style: theme.textTheme.bodyMedium?.copyWith(color: AppColors.textPrimary),
+                      ),
+                      Text(
+                        DateFormat.yMMMd().add_jm().format(call.timestamp),
+                        style: theme.textTheme.labelSmall,
+                      ),
+                    ],
                   ),
-                ),
-                Text(
-                  DateFormat.yMMMd().add_jm().format(call.timestamp),
-                  style: theme.textTheme.labelSmall,
                 ),
                 const SizedBox(width: AppSpacing.md),
-                SizedBox(
-                  width: 50,
-                  child: Text(
-                    call.duration.inMinutes > 0 ? '${call.duration.inMinutes}m' : '${call.duration.inSeconds}s',
-                    style: theme.textTheme.labelMedium,
-                    textAlign: TextAlign.end,
-                  ),
+                Text(
+                  call.duration.inMinutes > 0 ? '${call.duration.inMinutes}m' : '${call.duration.inSeconds}s',
+                  style: theme.textTheme.labelMedium,
                 ),
               ],
             ),

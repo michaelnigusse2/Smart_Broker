@@ -187,7 +187,7 @@ class _NoteDetailScreenState extends State<NoteDetailScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isEditing ? 'Edit Note' : 'Note Details'),
+        title: Text(_isEditing ? 'Edit Note' : 'Note'),
         actions: [
           if (_isEditing) ...[
             TextButton(
@@ -260,9 +260,12 @@ class _NoteDetailScreenState extends State<NoteDetailScreen> {
                         ),
                       ),
                       const SizedBox(width: AppSpacing.sm),
-                      Text(
-                        'From: ${_contact!.name}',
-                        style: theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w600),
+                      Flexible(
+                        child: Text(
+                          'From: ${_contact!.name}',
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w600),
+                        ),
                       ),
                       const SizedBox(width: AppSpacing.xs),
                       const Icon(LucideIcons.chevronRight, size: 14, color: AppColors.textTertiary),

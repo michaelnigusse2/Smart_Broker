@@ -135,19 +135,24 @@ dart format lib test   # page width 120, see analysis_options.yaml
 
 Repository tests run against an in-memory SQLite database (`test/helpers/test_db.dart`),
 so they don't need a device. Use fictional names and numbers in tests.
+`test/features/large_text_layout_test.dart` lays out key screens on a small phone with large
+text and fails on any overflow.
 
 ### CI
 
 `.github/workflows/ci.yml` runs on every push and pull request: format check →
 `flutter analyze --fatal-infos` → `flutter test --coverage` → coverage gate
-(`tool/coverage_gate.sh`, 40 % for now) → dead-handler scan (`tool/no_dead_handlers.sh`:
+(`tool/coverage_gate.sh`, 50 % for now) → dead-handler scan (`tool/no_dead_handlers.sh`:
 no empty `onTap`/`onPressed`, no `print`) → debug APK, uploaded as a build artifact. A weekly workflow posts
 `flutter pub outdated` to an issue. Protect `main` by requiring the `flutter` job.
 
 On Windows without a terminal, `tool/dev_runner.bat` runs a fixed set of these commands
-when asked (`build_logs/request.txt` → `build_logs/result.log`). `tool/emulator.bat` starts
-the Android Studio emulator, installs the debug APK and opens the app; `tool/adb_bridge.bat`
-accepts a few fixed commands (screenshot, tap, swipe, type, keys) for remote demos.
+when asked (`build_logs/request.txt` → `build_logs/result.log`); `emubuild` makes a smaller,
+x86_64-only debug APK for the emulator. `tool/emulator.bat` starts the Android Studio emulator,
+installs the debug APK and opens the app; `tool/emu_bridge.bat` accepts a few fixed commands
+(screenshot, tap, swipe, type, keys, Flutter log, font size, display size, free space, reinstall)
+for remote demos and UI checks. Debug builds log the full Flutter error report, so an overflow
+in the log names the widget and source line.
 
 Call detection and the overlay only work on a real Android device. Use
 **Settings → Developer Tools → Simulate Call** to test the call-logging flow without one.

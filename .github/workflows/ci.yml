@@ -44,7 +44,7 @@ jobs:
         run: flutter test --coverage
 
       - name: Coverage gate
-        run: bash tool/coverage_gate.sh 40 # raise to 60 at M2, 70 at M3
+        run: bash tool/coverage_gate.sh 50 # raise to 60 at M2, 70 at M3
 
       - name: Dead handlers / print()
         run: bash tool/no_dead_handlers.sh

@@ -21,6 +21,10 @@ class CalendarScreen extends StatefulWidget {
 }
 
 class _CalendarScreenState extends State<CalendarScreen> {
+  /// Height taken at the bottom by the floating nav bar plus the Add Reminder
+  /// button above it; scrollable content ends with this much space.
+  static const double _fabClearance = 176;
+
   final ReminderRepository _reminderRepo = ReminderRepository();
   final ContactRepository _contactRepo = ContactRepository();
 
@@ -101,245 +105,268 @@ class _CalendarScreenState extends State<CalendarScreen> {
         ),
       ),
       body: ConstrainedLayout(
-        child: Column(
-          children: [
+        // One scroll view for the whole page, so the day's reminders stay
+        // reachable when the calendar fills the screen (small phones, large text).
+        child: CustomScrollView(
+          slivers: [
             // ─── Controls ─────────────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  SegmentedButton<CalendarFormat>(
-                    segments: const [
-                      ButtonSegment(value: CalendarFormat.month, label: Text('Month')),
-                      ButtonSegment(value: CalendarFormat.week, label: Text('Week')),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
+                // Wraps onto two lines when there isn't room (narrow phones, large text).
+                child: SizedBox(
+                  width: double.infinity,
+                  child: Wrap(
+                    alignment: WrapAlignment.spaceBetween,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: AppSpacing.sm,
+                    runSpacing: AppSpacing.sm,
+                    children: [
+                      SegmentedButton<CalendarFormat>(
+                        showSelectedIcon: false,
+                        segments: const [
+                          ButtonSegment(value: CalendarFormat.month, label: Text('Month')),
+                          ButtonSegment(value: CalendarFormat.week, label: Text('Week')),
+                        ],
+                        selected: {_calendarFormat},
+                        onSelectionChanged: (set) {
+                          setState(() {
+                            _calendarFormat = set.first;
+                          });
+                        },
+                        style: SegmentedButton.styleFrom(
+                          backgroundColor: AppColors.surface,
+                          selectedBackgroundColor: AppColors.surfaceElevated,
+                          foregroundColor: AppColors.textSecondary,
+                          selectedForegroundColor: AppColors.textPrimary,
+                          shape: RoundedRectangleBorder(borderRadius: AppRadius.button),
+                          side: const BorderSide(color: AppColors.border),
+                        ),
+                      ),
+                      FilterChip(
+                        label: const Text('Hide completed'),
+                        selected: _hideCompleted,
+                        onSelected: (val) {
+                          setState(() => _hideCompleted = val);
+                        },
+                      ),
                     ],
-                    selected: {_calendarFormat},
-                    onSelectionChanged: (set) {
-                      setState(() {
-                        _calendarFormat = set.first;
-                      });
-                    },
-                    style: SegmentedButton.styleFrom(
-                      backgroundColor: AppColors.surface,
-                      selectedBackgroundColor: AppColors.surfaceElevated,
-                      foregroundColor: AppColors.textSecondary,
-                      selectedForegroundColor: AppColors.textPrimary,
-                      shape: RoundedRectangleBorder(borderRadius: AppRadius.button),
-                      side: const BorderSide(color: AppColors.border),
-                    ),
                   ),
-                  FilterChip(
-                    label: const Text('Hide Completed'),
-                    selected: _hideCompleted,
-                    onSelected: (val) {
-                      setState(() => _hideCompleted = val);
-                    },
-                  ),
-                ],
+                ),
               ),
             ),
 
             // ─── Calendar ─────────────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-              child: TableCalendar<Reminder>(
-                firstDay: DateTime.utc(2020, 1, 1),
-                lastDay: DateTime.utc(2100, 12, 31),
-                focusedDay: _focusedDay,
-                calendarFormat: _calendarFormat,
-                availableCalendarFormats: const {
-                  CalendarFormat.month: 'Month',
-                  CalendarFormat.week: 'Week',
-                },
-                onFormatChanged: (format) {
-                  if (_calendarFormat != format) {
-                    setState(() => _calendarFormat = format);
-                  }
-                },
-                rowHeight: _calendarFormat == CalendarFormat.week ? 80 : 52,
-                selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
-                eventLoader: _getEventsForDay,
-                startingDayOfWeek: StartingDayOfWeek.monday,
-
-                calendarStyle: const CalendarStyle(
-                  // Disable all built-in markers — we handle them in calendarBuilders
-                  markersMaxCount: 0,
-                  isTodayHighlighted: false,
-                ),
-
-                // ── Custom cell builders for full control ────────────
-                calendarBuilders: CalendarBuilders(
-                  // Suppress default markers entirely
-                  markerBuilder: (context, day, events) => const SizedBox.shrink(),
-
-                  defaultBuilder: (context, day, focusedDay) {
-                    return _DayCell(
-                      day: day,
-                      events: _getEventsForDay(day),
-                      isToday: false,
-                      isSelected: false,
-                      isOutside: false,
-                      isWeekView: _calendarFormat == CalendarFormat.week,
-                    );
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+                child: TableCalendar<Reminder>(
+                  firstDay: DateTime.utc(2020, 1, 1),
+                  lastDay: DateTime.utc(2100, 12, 31),
+                  focusedDay: _focusedDay,
+                  calendarFormat: _calendarFormat,
+                  availableCalendarFormats: const {
+                    CalendarFormat.month: 'Month',
+                    CalendarFormat.week: 'Week',
                   },
-
-                  todayBuilder: (context, day, focusedDay) {
-                    return _DayCell(
-                      day: day,
-                      events: _getEventsForDay(day),
-                      isToday: true,
-                      isSelected: isSameDay(day, _selectedDay),
-                      isOutside: false,
-                      isWeekView: _calendarFormat == CalendarFormat.week,
-                    );
+                  onFormatChanged: (format) {
+                    if (_calendarFormat != format) {
+                      setState(() => _calendarFormat = format);
+                    }
                   },
+                  rowHeight: _calendarFormat == CalendarFormat.week ? 80 : 52,
+                  // The default 16 clips "Mon Tue …" with large text.
+                  daysOfWeekHeight: MediaQuery.textScalerOf(context).scale(20),
+                  selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
+                  eventLoader: _getEventsForDay,
+                  startingDayOfWeek: StartingDayOfWeek.monday,
+                  // Vertical drags scroll the page instead of switching month/week.
+                  availableGestures: AvailableGestures.horizontalSwipe,
 
-                  selectedBuilder: (context, day, focusedDay) {
-                    return _DayCell(
-                      day: day,
-                      events: _getEventsForDay(day),
-                      isToday: isSameDay(day, DateTime.now()),
-                      isSelected: true,
-                      isOutside: false,
-                      isWeekView: _calendarFormat == CalendarFormat.week,
-                    );
-                  },
-
-                  outsideBuilder: (context, day, focusedDay) {
-                    return _DayCell(
-                      day: day,
-                      events: _getEventsForDay(day),
-                      isToday: false,
-                      isSelected: false,
-                      isOutside: true,
-                      isWeekView: _calendarFormat == CalendarFormat.week,
-                    );
-                  },
-
-                  disabledBuilder: (context, day, focusedDay) {
-                    return _DayCell(
-                      day: day,
-                      events: const [],
-                      isToday: false,
-                      isSelected: false,
-                      isOutside: true,
-                      isWeekView: _calendarFormat == CalendarFormat.week,
-                    );
-                  },
-                ),
-
-                // ── Header ──────────────────────────────────────────
-                headerStyle: HeaderStyle(
-                  formatButtonVisible: false,
-                  titleCentered: true,
-                  titleTextStyle: theme.textTheme.titleMedium!,
-                  leftChevronIcon: const Icon(
-                    LucideIcons.chevronLeft,
-                    size: 20,
-                    color: AppColors.textSecondary,
+                  calendarStyle: const CalendarStyle(
+                    // Disable all built-in markers — we handle them in calendarBuilders
+                    markersMaxCount: 0,
+                    isTodayHighlighted: false,
                   ),
-                  rightChevronIcon: const Icon(
-                    LucideIcons.chevronRight,
-                    size: 20,
-                    color: AppColors.textSecondary,
-                  ),
-                  headerPadding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-                ),
 
-                // ── Weekday row ──────────────────────────────────────
-                daysOfWeekStyle: DaysOfWeekStyle(
-                  weekdayStyle: theme.textTheme.labelMedium!,
-                  weekendStyle: theme.textTheme.labelMedium!.copyWith(
-                    color: AppColors.textTertiary,
-                  ),
-                ),
+                  // ── Custom cell builders for full control ────────────
+                  calendarBuilders: CalendarBuilders(
+                    // Suppress default markers entirely
+                    markerBuilder: (context, day, events) => const SizedBox.shrink(),
 
-                onDaySelected: (selectedDay, focusedDay) {
-                  setState(() {
-                    _selectedDay = selectedDay;
+                    defaultBuilder: (context, day, focusedDay) {
+                      return _DayCell(
+                        day: day,
+                        events: _getEventsForDay(day),
+                        isToday: false,
+                        isSelected: false,
+                        isOutside: false,
+                        isWeekView: _calendarFormat == CalendarFormat.week,
+                      );
+                    },
+
+                    todayBuilder: (context, day, focusedDay) {
+                      return _DayCell(
+                        day: day,
+                        events: _getEventsForDay(day),
+                        isToday: true,
+                        isSelected: isSameDay(day, _selectedDay),
+                        isOutside: false,
+                        isWeekView: _calendarFormat == CalendarFormat.week,
+                      );
+                    },
+
+                    selectedBuilder: (context, day, focusedDay) {
+                      return _DayCell(
+                        day: day,
+                        events: _getEventsForDay(day),
+                        isToday: isSameDay(day, DateTime.now()),
+                        isSelected: true,
+                        isOutside: false,
+                        isWeekView: _calendarFormat == CalendarFormat.week,
+                      );
+                    },
+
+                    outsideBuilder: (context, day, focusedDay) {
+                      return _DayCell(
+                        day: day,
+                        events: _getEventsForDay(day),
+                        isToday: false,
+                        isSelected: false,
+                        isOutside: true,
+                        isWeekView: _calendarFormat == CalendarFormat.week,
+                      );
+                    },
+
+                    disabledBuilder: (context, day, focusedDay) {
+                      return _DayCell(
+                        day: day,
+                        events: const [],
+                        isToday: false,
+                        isSelected: false,
+                        isOutside: true,
+                        isWeekView: _calendarFormat == CalendarFormat.week,
+                      );
+                    },
+                  ),
+
+                  // ── Header ──────────────────────────────────────────
+                  headerStyle: HeaderStyle(
+                    formatButtonVisible: false,
+                    titleCentered: true,
+                    titleTextStyle: theme.textTheme.titleMedium!,
+                    leftChevronIcon: const Icon(
+                      LucideIcons.chevronLeft,
+                      size: 20,
+                      color: AppColors.textSecondary,
+                    ),
+                    rightChevronIcon: const Icon(
+                      LucideIcons.chevronRight,
+                      size: 20,
+                      color: AppColors.textSecondary,
+                    ),
+                    headerPadding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+                  ),
+
+                  // ── Weekday row ──────────────────────────────────────
+                  daysOfWeekStyle: DaysOfWeekStyle(
+                    weekdayStyle: theme.textTheme.labelMedium!,
+                    weekendStyle: theme.textTheme.labelMedium!.copyWith(
+                      color: AppColors.textTertiary,
+                    ),
+                  ),
+
+                  onDaySelected: (selectedDay, focusedDay) {
+                    setState(() {
+                      _selectedDay = selectedDay;
+                      _focusedDay = focusedDay;
+                    });
+                  },
+                  onPageChanged: (focusedDay) {
                     _focusedDay = focusedDay;
-                  });
-                },
-                onPageChanged: (focusedDay) {
-                  _focusedDay = focusedDay;
-                },
+                  },
+                ),
               ),
             ),
 
-            Container(height: 1, color: AppColors.divider),
+            SliverToBoxAdapter(child: Container(height: 1, color: AppColors.divider)),
 
             // ─── Events for selected day ───────────────────────────────
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(top: AppSpacing.xl, bottom: AppSpacing.md),
-                      child: Row(
-                        children: [
-                          Text(
-                            DateFormat.MMMMEEEEd().format(_selectedDay),
-                            style: theme.textTheme.titleMedium,
-                          ),
-                          const SizedBox(width: AppSpacing.sm),
-                          if (selectedReminders.isNotEmpty)
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: AppColors.surfaceElevated,
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Text(
-                                '${selectedReminders.length}',
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.textSecondary,
-                                ),
-                              ),
-                            ),
-                        ],
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+              sliver: SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: AppSpacing.xl, bottom: AppSpacing.md),
+                  child: Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          DateFormat.MMMMEEEEd().format(_selectedDay),
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleMedium,
+                        ),
                       ),
-                    ),
-                    Expanded(
-                      child: selectedReminders.isEmpty
-                          ? Center(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    LucideIcons.calendarCheck,
-                                    size: 28,
-                                    color: AppColors.textTertiary,
-                                  ),
-                                  const SizedBox(height: AppSpacing.md),
-                                  Text(
-                                    isSameCalendarDay(_selectedDay, DateTime.now())
-                                        ? 'No events today'
-                                        : 'No events on ${DateFormat.MMMd().format(_selectedDay)}',
-                                    style: theme.textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary),
-                                  ),
-                                ],
-                              ),
-                            )
-                          : ListView.builder(
-                              padding: const EdgeInsets.only(bottom: 100),
-                              itemCount: selectedReminders.length,
-                              itemBuilder: (context, index) {
-                                return _EventRow(
-                                  reminder: selectedReminders[index],
-                                  onReload: _loadData,
-                                );
-                              },
+                      const SizedBox(width: AppSpacing.sm),
+                      if (selectedReminders.isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppColors.surfaceElevated,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '${selectedReminders.length}',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textSecondary,
                             ),
-                    ),
-                  ],
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ),
+            if (selectedReminders.isEmpty)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: Padding(
+                  // Keeps the message clear of the floating button and nav bar.
+                  padding: const EdgeInsets.only(bottom: _fabClearance),
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          LucideIcons.calendarCheck,
+                          size: 28,
+                          color: AppColors.textTertiary,
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        Text(
+                          isSameCalendarDay(_selectedDay, DateTime.now())
+                              ? 'No events today'
+                              : 'No events on ${DateFormat.MMMd().format(_selectedDay)}',
+                          style: theme.textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              )
+            else
+              SliverPadding(
+                // Bottom space so the last reminder can scroll above the floating button.
+                padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 0, AppSpacing.lg, _fabClearance),
+                sliver: SliverList.builder(
+                  itemCount: selectedReminders.length,
+                  itemBuilder: (context, index) => _EventRow(
+                    reminder: selectedReminders[index],
+                    onReload: _loadData,
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -481,8 +508,10 @@ class _AddReminderSheetState extends State<_AddReminderSheet> {
             const SizedBox(height: AppSpacing.lg),
 
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
+                  flex: 3,
                   child: InkWell(
                     onTap: () async {
                       final date = await showDatePicker(
@@ -495,12 +524,17 @@ class _AddReminderSheetState extends State<_AddReminderSheet> {
                     },
                     child: InputDecorator(
                       decoration: const InputDecoration(labelText: 'Date', border: OutlineInputBorder()),
-                      child: Text(DateFormat.yMMMd().format(_selectedDate)),
+                      child: Text(
+                        DateFormat.yMMMd().format(_selectedDate),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   ),
                 ),
                 const SizedBox(width: AppSpacing.md),
                 Expanded(
+                  flex: 2,
                   child: InkWell(
                     onTap: () async {
                       final time = await showTimePicker(
@@ -511,7 +545,7 @@ class _AddReminderSheetState extends State<_AddReminderSheet> {
                     },
                     child: InputDecorator(
                       decoration: const InputDecoration(labelText: 'Time', border: OutlineInputBorder()),
-                      child: Text(_selectedTime.format(context)),
+                      child: Text(_selectedTime.format(context), maxLines: 1, overflow: TextOverflow.ellipsis),
                     ),
                   ),
                 ),
@@ -741,16 +775,21 @@ class _EventRow extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Time
+            // Grows with the text size and never wraps "9:57 PM" onto two lines.
             SizedBox(
-              width: 56,
-              child: Text(
-                DateFormat.jm().format(reminder.dateTime),
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: reminder.completed ? AppColors.textTertiary : AppColors.textSecondary,
-                  height: 1.4,
-                  decoration: reminder.completed ? TextDecoration.lineThrough : null,
+              width: MediaQuery.textScalerOf(context).scale(60),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.topRight,
+                child: Text(
+                  DateFormat.jm().format(reminder.dateTime),
+                  maxLines: 1,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: reminder.completed ? AppColors.textTertiary : AppColors.textSecondary,
+                    height: 1.4,
+                    decoration: reminder.completed ? TextDecoration.lineThrough : null,
+                  ),
                 ),
-                textAlign: TextAlign.right,
               ),
             ),
             const SizedBox(width: AppSpacing.md),

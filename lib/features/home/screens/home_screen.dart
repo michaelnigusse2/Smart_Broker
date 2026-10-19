@@ -132,18 +132,18 @@ class _HomeScreenState extends State<HomeScreen> {
                       const SizedBox(height: AppSpacing.xl),
 
                       // Stat pills row
-                      Row(
+                      Wrap(
+                        spacing: AppSpacing.sm,
+                        runSpacing: AppSpacing.sm,
                         children: [
                           _StatPill(
                             label: '${_contacts.length} Contacts',
                             icon: LucideIcons.users,
                           ),
-                          const SizedBox(width: AppSpacing.sm),
                           _StatPill(
                             label: '${_pendingTodos.length} Tasks',
                             icon: LucideIcons.checkSquare,
                           ),
-                          const SizedBox(width: AppSpacing.sm),
                           _StatPill(
                             label: '${_upcomingReminders.length} Reminders',
                             icon: LucideIcons.bell,
