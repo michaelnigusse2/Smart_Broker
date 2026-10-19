@@ -109,13 +109,25 @@ test/                         # Unit + repository tests (in-memory SQLite via sq
 `contacts` 1—* `notes`, `todos`, `reminders`, `calls`. Todos and reminders can link
 back to the note that created them (`noteId`). Deleting a contact cascades.
 
+- **Schema version 2** (`lib/core/database/schema.dart`). Fresh installs create it directly;
+  older databases are upgraded by the steps in `lib/core/database/migrations.dart`, inside
+  one transaction. Add a new `Migration` and bump `schemaVersion` for every schema change, and
+  never edit a released one. `test/core/database/migration_test.dart` checks that an upgraded
+  v1 database ends up identical to a fresh one.
+- **One contact per number:** `contacts.phoneKey` (last 9 digits) has a unique index. The v2
+  migration merged existing duplicates, and `ContactRepository.insert` returns the existing
+  contact's id instead of creating a second one.
+- Open-task counts are computed in queries, not stored. Calls are stored once per contact and
+  start time. `todos.dueAt` and the `unassigned_calls` table are ready for due dates and the
+  unknown-caller inbox.
+
 ---
 
 ## Running locally
 
 ```bash
 flutter pub get
-flutter run          # pick an Android device/emulator for call features
+flutter run          # Android device or emulator (the only supported target besides iOS scaffolding)
 flutter analyze
 flutter test --coverage
 dart format lib test   # page width 120, see analysis_options.yaml
@@ -128,8 +140,8 @@ so they don't need a device. Use fictional names and numbers in tests.
 
 `.github/workflows/ci.yml` runs on every push and pull request: format check →
 `flutter analyze --fatal-infos` → `flutter test --coverage` → coverage gate
-(`tool/coverage_gate.sh`, 40 % for now) → dead-handler scan (`tool/no_dead_handlers.sh`,
-warning only for now) → debug APK, uploaded as a build artifact. A weekly workflow posts
+(`tool/coverage_gate.sh`, 40 % for now) → dead-handler scan (`tool/no_dead_handlers.sh`:
+no empty `onTap`/`onPressed`, no `print`) → debug APK, uploaded as a build artifact. A weekly workflow posts
 `flutter pub outdated` to an issue. Protect `main` by requiring the `flutter` job.
 
 On Windows without a terminal, `tool/dev_runner.bat` runs a fixed set of these commands
@@ -154,10 +166,10 @@ Release builds and signing: see [docs/RELEASE.md](docs/RELEASE.md).
 - The call overlay can't bring the app to the front. After "Save & Process", open
   SmartBroker (or tap the post-call notification) and AI Review opens automatically.
 - For outgoing calls the caller's name appears in the overlay only when the call ends.
-- Unknown numbers are auto-created as contacts (an "unassigned calls" inbox is planned).
+- Unknown numbers are auto-created as contacts (an "unassigned calls" inbox is planned; its
+  table already exists). A number can belong to only one contact.
   By default the live overlay and the post-call prompt only appear for numbers that are
   already contacts (Settings → Live call overlay: Contacts / All calls / Off).
-- "Add contact" and the contact "⋯" menu are placeholders; the Notes list screen has no entry point.
 - The home greeting name is hardcoded.
 
 ---

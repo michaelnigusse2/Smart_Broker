@@ -4,7 +4,7 @@ rem SmartBroker dev runner
 rem
 rem Leave this window open while working with the AI assistant. It watches for
 rem build_logs\request.txt and runs ONE of a fixed set of Flutter commands:
-rem   pubget | analyze | test | coverage | check | format | formatfix | build | all
+rem   pubget | analyze | test | coverage | check | format | formatfix | build | release | all
 rem   (check = pub get + analyze + test --coverage; formatfix rewrites files)
 rem Anything else in the request file is ignored. Output goes to
 rem build_logs\result.log and build_logs\done.txt marks completion.
@@ -48,6 +48,7 @@ if /i "%ACTION%"=="check"   goto do_check
 if /i "%ACTION%"=="format"  goto do_format
 if /i "%ACTION%"=="formatfix" goto do_formatfix
 if /i "%ACTION%"=="build"   goto do_build
+if /i "%ACTION%"=="release" goto do_release
 if /i "%ACTION%"=="all"     goto do_all
 echo unknown action ignored>> "%LOG%"
 goto finish
@@ -106,6 +107,12 @@ goto finish
 echo ===== flutter build apk --debug>> "%LOG%"
 call "%FLUTTER%" build apk --debug >> "%LOG%" 2>&1
 >> "%LOG%" echo exit_build=%errorlevel%
+goto finish
+
+:do_release
+echo ===== flutter build apk --release>> "%LOG%"
+call "%FLUTTER%" build apk --release >> "%LOG%" 2>&1
+>> "%LOG%" echo exit_release=%errorlevel%
 goto finish
 
 :do_all
