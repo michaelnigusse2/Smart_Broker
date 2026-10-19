@@ -150,8 +150,10 @@ On Windows without a terminal, `tool/dev_runner.bat` runs a fixed set of these c
 when asked (`build_logs/request.txt` → `build_logs/result.log`); `emubuild` makes a smaller,
 x86_64-only debug APK for the emulator. `tool/emulator.bat` starts the Android Studio emulator,
 installs the debug APK and opens the app; `tool/emu_bridge.bat` accepts a few fixed commands
-(screenshot, tap, swipe, type, keys, Flutter log, font size, display size, free space, reinstall)
-for remote demos and UI checks. Debug builds log the full Flutter error report, so an overflow
+(screenshot, tap, swipe, type, keys, Flutter log, font size, display size, free space, reinstall,
+connected devices, Addis Scribe trial) for remote demos and UI checks. `tool/scribe/` holds the
+offline-transcription spike: an Android build script for NeMo-Speech.cpp, the on-device benchmark
+and an accuracy check for your own Amharic voice notes (see the research note in `docs/research/`). Debug builds log the full Flutter error report, so an overflow
 in the log names the widget and source line.
 
 Call detection and the overlay only work on a real Android device. Use

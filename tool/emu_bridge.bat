@@ -63,6 +63,8 @@ if /i "!CMD!"=="font"    goto do_font
 if /i "!CMD!"=="density" goto do_density
 if /i "!CMD!"=="storage" goto do_storage
 if /i "!CMD!"=="reinstall" goto do_reinstall
+if /i "!CMD!"=="devices" goto do_devices
+if /i "!CMD!"=="scribe"  goto do_scribe
 call :done "ignored"
 exit /b 0
 
@@ -134,6 +136,35 @@ rem Removes SmartBroker and its data from the emulator first (frees space).
 "%ADB%" -e install "%APK%" >> "%LOG%" 2>&1
 "%ADB%" -e shell monkey -p com.smartbroker.smart_broker -c android.intent.category.LAUNCHER 1 >nul 2>> "%LOG%"
 call :done "reinstall"
+exit /b 0
+
+:do_devices
+"%ADB%" devices -l > build_logs\devices.txt 2>&1
+call :done "devices"
+exit /b 0
+
+:do_scribe
+rem Addis Scribe trial: push the speech runtime (+ model, audio) and run
+rem tool\scribe\run_on_device.sh on the device. "scribe emu" checks the runtime only
+rem (the emulator has no room for the 499 MB model); "scribe phone" runs it all.
+set "SEL=" & set "ABI="
+if /i "!P1!"=="emu" (set "SEL=-e" & set "ABI=x64")
+if /i "!P1!"=="phone" (set "SEL=-d" & set "ABI=arm64")
+if not defined SEL (call :done "bad target" & exit /b 0)
+set "SD=build_logs\scribe"
+set "OUT=!SD!\result_!P1!.txt"
+echo scribe !P1! %date% %time%> "!OUT!"
+"%ADB%" !SEL! shell mkdir -p /data/local/tmp/scribe/wav >> "!OUT!" 2>&1
+"%ADB%" !SEL! push "!SD!\android-!ABI!\." /data/local/tmp/scribe/ >> "!OUT!" 2>&1
+"%ADB%" !SEL! push "!SD!\jfk.wav" /data/local/tmp/scribe/ >> "!OUT!" 2>&1
+"%ADB%" !SEL! push "tool\scribe\run_on_device.sh" /data/local/tmp/scribe/run.sh >> "!OUT!" 2>&1
+if /i "!P1!"=="phone" "%ADB%" !SEL! push "!SD!\addis-scribe-rnnt-q5_k.gguf" /data/local/tmp/scribe/ >> "!OUT!" 2>&1
+if exist "!SD!\wav" "%ADB%" !SEL! push "!SD!\wav\." /data/local/tmp/scribe/wav/ >> "!OUT!" 2>&1
+"%ADB%" !SEL! shell chmod 755 /data/local/tmp/scribe/nemo-speech >> "!OUT!" 2>&1
+"%ADB%" !SEL! shell sh /data/local/tmp/scribe/run.sh >> "!OUT!" 2>&1
+"%ADB%" !SEL! pull /data/local/tmp/scribe/out "!SD!\out_!P1!" >> "!OUT!" 2>&1
+echo finished %date% %time%>> "!OUT!"
+call :done "scribe"
 exit /b 0
 
 :do_logcat

@@ -51,6 +51,7 @@ if /i "%ACTION%"=="build"   goto do_build
 if /i "%ACTION%"=="release" goto do_release
 if /i "%ACTION%"=="all"     goto do_all
 if /i "%ACTION%"=="emubuild" goto do_emubuild
+if /i "%ACTION%"=="ndkcopy" goto do_ndkcopy
 echo unknown action ignored>> "%LOG%"
 goto finish
 
@@ -138,6 +139,29 @@ if exist "build\app\outputs\apk\debug\app-debug.apk" del "build\app\outputs\apk\
 echo ===== flutter build apk --debug --target-platform android-x64>> "%LOG%"
 call "%FLUTTER%" build apk --debug --target-platform android-x64 >> "%LOG%" 2>&1
 >> "%LOG%" echo exit_build=%errorlevel%
+goto finish
+
+:do_ndkcopy
+rem Copies the Android NDK's headers and arm64/x86_64 libraries (not its
+rem compilers) into build_logs\ndk, for cross-compiling native code elsewhere.
+set "NDKROOT="
+for /d %%d in ("%LOCALAPPDATA%\Android\Sdk\ndk\*") do set "NDKROOT=%%d"
+if not defined NDKROOT (
+  echo no NDK found under %LOCALAPPDATA%\Android\Sdk\ndk>> "%LOG%"
+  goto finish
+)
+echo ===== copy NDK headers and libraries from %NDKROOT%>> "%LOG%"
+set "TC=%NDKROOT%\toolchains\llvm\prebuilt\windows-x86_64"
+set "DST=build_logs\ndk"
+robocopy "%TC%\sysroot\usr\include" "%DST%\sysroot\usr\include" /E /NFL /NDL /NP /NJH >> "%LOG%"
+for %%a in (aarch64-linux-android x86_64-linux-android) do (
+  robocopy "%TC%\sysroot\usr\lib\%%a" "%DST%\sysroot\usr\lib\%%a" /LEV:1 /NFL /NDL /NP /NJH >> "%LOG%"
+  robocopy "%TC%\sysroot\usr\lib\%%a\24" "%DST%\sysroot\usr\lib\%%a\24" /E /NFL /NDL /NP /NJH >> "%LOG%"
+  robocopy "%TC%\sysroot\usr\lib\%%a\28" "%DST%\sysroot\usr\lib\%%a\28" /E /NFL /NDL /NP /NJH >> "%LOG%"
+)
+robocopy "%TC%\lib\clang" "%DST%\lib\clang" *aarch64-android.a *x86_64-android.a libunwind.a /S /NFL /NDL /NP /NJH >> "%LOG%"
+echo %NDKROOT%> "%DST%\SOURCE.txt"
+>> "%LOG%" echo exit_ndkcopy=0
 goto finish
 
 :finish
