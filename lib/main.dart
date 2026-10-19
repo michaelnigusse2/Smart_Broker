@@ -17,6 +17,7 @@ import 'core/theme/app_theme.dart';
 import 'features/calendar/screens/reminder_detail_screen.dart';
 import 'features/calls/screens/call_overlay_screen.dart';
 import 'features/contacts/screens/contact_detail_screen.dart';
+import 'features/contacts/screens/contact_form_screen.dart';
 import 'features/contacts/screens/phone_contact_detail_screen.dart';
 import 'features/home/screens/main_shell.dart';
 import 'features/home/screens/startup_error_screen.dart';
@@ -176,6 +177,7 @@ class _SmartBrokerAppState extends State<SmartBrokerApp> with WidgetsBindingObse
       routes: {
         AppRoutes.shell: (context) => const MainShell(),
         AppRoutes.contactDetail: (context) => const ContactDetailScreen(),
+        AppRoutes.contactForm: (context) => const ContactFormScreen(),
         AppRoutes.noteDetail: (context) => const NoteDetailScreen(),
         AppRoutes.notesList: (context) => const NotesListScreen(),
         AppRoutes.tasks: (context) => const TasksScreen(),

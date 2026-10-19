@@ -38,6 +38,12 @@ class CallOverlayState {
 
   static Future<void> clear() => _prefs.remove(_stateKey);
 
+  /// Drops the current-call state and any note waiting for AI review.
+  static Future<void> clearAll() async {
+    await _prefs.remove(_stateKey);
+    await _prefs.remove(_pendingReviewKey);
+  }
+
   // ── Note waiting for AI review ─────────────────────────────────
   //
   // Written by the overlay's "Save & Process"; picked up by the app the next

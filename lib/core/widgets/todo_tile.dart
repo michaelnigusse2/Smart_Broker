@@ -15,6 +15,10 @@ class TodoTile extends StatelessWidget {
   final VoidCallback? onTapSubtitle;
   final bool showChevron;
 
+  /// Tapping the row. Defaults to toggling the checkbox; screens that show a
+  /// chevron should open something instead.
+  final VoidCallback? onTap;
+
   const TodoTile({
     super.key,
     required this.todo,
@@ -26,6 +30,7 @@ class TodoTile extends StatelessWidget {
     this.subtitleText,
     this.onTapSubtitle,
     this.showChevron = false,
+    this.onTap,
   });
 
   bool get isOverdue {
@@ -136,8 +141,9 @@ class TodoTile extends StatelessWidget {
         onTap: () {
           if (isBulkMode) {
             onChanged?.call(!isSelected);
+          } else if (onTap != null) {
+            onTap!();
           } else {
-            // Default list tile tap could toggle checkbox, but let's just make it toggle checkbox
             onChanged?.call(!todo.isCompleted);
           }
         },

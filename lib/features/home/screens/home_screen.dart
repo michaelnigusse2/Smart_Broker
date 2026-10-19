@@ -7,11 +7,13 @@ import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/todo_tile.dart';
 import '../../../core/constants/app_routes.dart';
 import '../../../core/repositories/contact_repository.dart';
+import '../../../core/repositories/note_repository.dart';
 import '../../../core/repositories/todo_repository.dart';
 import '../../../core/repositories/reminder_repository.dart';
 import '../../../models/contact.dart';
 import '../../../models/todo_item.dart';
 import '../../../models/reminder.dart';
+import 'main_shell.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -28,6 +30,8 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Contact> _contacts = [];
   List<TodoItem> _pendingTodos = [];
   List<Reminder> _upcomingReminders = [];
+  int _noteCount = 0;
+  int _unprocessedNoteCount = 0;
   bool _isLoading = true;
   String? _error;
 
@@ -43,12 +47,15 @@ class _HomeScreenState extends State<HomeScreen> {
       final todos = await _todoRepo.getPending();
       // Include overdue reminders so they don't silently disappear.
       final reminders = await _reminderRepo.getOpen();
+      final noteCounts = await NoteRepository().counts();
 
       if (mounted) {
         setState(() {
           _contacts = contacts;
           _pendingTodos = todos;
           _upcomingReminders = reminders;
+          _noteCount = noteCounts.total;
+          _unprocessedNoteCount = noteCounts.unprocessed;
           _isLoading = false;
         });
       }
@@ -61,6 +68,8 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
   }
+
+  void _openNotes() => Navigator.pushNamed(context, AppRoutes.notesList).then((_) => _loadData());
 
   String _greeting() {
     final hour = DateTime.now().hour;
@@ -153,9 +162,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const SectionHeader(
+                      SectionHeader(
                         title: 'Upcoming Reminders',
                         actionLabel: 'See all',
+                        onActionTap: () => MainShell.selectTab(context, MainShell.calendarTab),
                       ),
                       ...displayReminders.map(
                         (r) => _ReminderRow(
@@ -166,9 +176,10 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
 
-                      const SectionHeader(
+                      SectionHeader(
                         title: 'Recent Contacts',
                         actionLabel: 'See all',
+                        onActionTap: () => MainShell.selectTab(context, MainShell.contactsTab),
                       ),
                       ...recentContacts.take(3).map(
                         (contact) {
@@ -201,11 +212,28 @@ class _HomeScreenState extends State<HomeScreen> {
                         (todo) => TodoTile(
                           todo: todo,
                           showChevron: true,
+                          // The row opens the contact; only the checkbox completes the task.
+                          onTap: () => Navigator.pushNamed(
+                            context,
+                            AppRoutes.contactDetail,
+                            arguments: todo.contactId,
+                          ).then((_) => _loadData()),
                           onChanged: (val) async {
                             await _todoRepo.toggleCompleted(todo.id);
                             _loadData(); // Refresh UI
                           },
                         ),
+                      ),
+
+                      SectionHeader(
+                        title: 'Notes',
+                        actionLabel: 'See all',
+                        onActionTap: _openNotes,
+                      ),
+                      _NotesSummary(
+                        total: _noteCount,
+                        unprocessed: _unprocessedNoteCount,
+                        onTap: _openNotes,
                       ),
 
                       // Space for floating nav bar
@@ -216,6 +244,45 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Notes summary ───────────────────────────────────────────────────────────
+class _NotesSummary extends StatelessWidget {
+  final int total;
+  final int unprocessed;
+  final VoidCallback onTap;
+
+  const _NotesSummary({required this.total, required this.unprocessed, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final subtitle = total == 0
+        ? 'No notes yet'
+        : unprocessed == 0
+        ? '$total ${total == 1 ? 'note' : 'notes'}'
+        : '$total ${total == 1 ? 'note' : 'notes'} · $unprocessed waiting for AI Review';
+    return InkWell(
+      onTap: onTap,
+      borderRadius: AppRadius.card,
+      child: Container(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: AppRadius.card,
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          children: [
+            Icon(LucideIcons.fileText, color: unprocessed > 0 ? AppColors.primary : AppColors.textSecondary),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(child: Text(subtitle, style: theme.textTheme.bodyMedium)),
+            const Icon(LucideIcons.chevronRight, size: 18, color: AppColors.textTertiary),
+          ],
         ),
       ),
     );

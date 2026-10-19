@@ -145,7 +145,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
               padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
               child: TableCalendar<Reminder>(
                 firstDay: DateTime.utc(2020, 1, 1),
-                lastDay: DateTime.utc(2030, 12, 31),
+                lastDay: DateTime.utc(2100, 12, 31),
                 focusedDay: _focusedDay,
                 calendarFormat: _calendarFormat,
                 availableCalendarFormats: const {
@@ -317,7 +317,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                   ),
                                   const SizedBox(height: AppSpacing.md),
                                   Text(
-                                    'No events today',
+                                    isSameCalendarDay(_selectedDay, DateTime.now())
+                                        ? 'No events today'
+                                        : 'No events on ${DateFormat.MMMd().format(_selectedDay)}',
                                     style: theme.textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary),
                                   ),
                                 ],

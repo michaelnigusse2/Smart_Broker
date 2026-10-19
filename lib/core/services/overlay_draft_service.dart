@@ -13,4 +13,11 @@ class OverlayDraftService {
   Future<String?> loadDraft(String contactId) => _prefs.getString('$_prefix$contactId');
 
   Future<void> clearDraft(String contactId) => _prefs.remove('$_prefix$contactId');
+
+  /// Removes every saved draft (used by "Reset local data").
+  Future<void> clearAll() async {
+    for (final key in await _prefs.getKeys()) {
+      if (key.startsWith(_prefix)) await _prefs.remove(key);
+    }
+  }
 }

@@ -75,6 +75,16 @@ class _ContactsScreenState extends State<ContactsScreen> {
     }
   }
 
+  /// Opens the new-contact form, then the saved (or already existing) contact.
+  Future<void> _addContact() async {
+    final id = await Navigator.pushNamed(context, AppRoutes.contactForm);
+    if (!mounted) return;
+    if (id is String) {
+      await Navigator.pushNamed(context, AppRoutes.contactDetail, arguments: id);
+    }
+    if (mounted) _loadData();
+  }
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -83,8 +93,15 @@ class _ContactsScreenState extends State<ContactsScreen> {
 
   List<UnifiedContact> get _filteredContacts {
     // 1. Apply search
+    final query = _searchQuery.trim().toLowerCase();
+    final queryDigits = query.replaceAll(RegExp(r'\D'), '');
     var contacts = _allContacts.where((c) {
-      return c.name.toLowerCase().contains(_searchQuery.toLowerCase()) || c.phoneNumber.contains(_searchQuery);
+      if (query.isEmpty || c.name.toLowerCase().contains(query)) return true;
+      // Numbers match regardless of spaces, dashes or +251 vs 0.
+      if (queryDigits.length < 3) return false;
+      final digits = c.phoneNumber.replaceAll(RegExp(r'\D'), '');
+      final local = queryDigits.startsWith('0') ? queryDigits.substring(1) : queryDigits;
+      return digits.contains(queryDigits) || (local.length >= 3 && digits.contains(local));
     }).toList();
 
     // 2. Apply filter
@@ -148,7 +165,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
         actions: [
           IconButton(
             icon: const Icon(LucideIcons.userPlus),
-            onPressed: () {},
+            onPressed: _addContact,
             tooltip: 'Add contact',
           ),
           const SizedBox(width: AppSpacing.sm),

@@ -10,12 +10,23 @@ import 'home_screen.dart';
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
 
+  static const homeTab = 0;
+  static const contactsTab = 1;
+  static const calendarTab = 2;
+  static const settingsTab = 3;
+
+  /// Switches the bottom-bar tab from a screen inside the shell.
+  static void selectTab(BuildContext context, int index) =>
+      context.findAncestorStateOfType<_MainShellState>()?._select(index);
+
   @override
   State<MainShell> createState() => _MainShellState();
 }
 
 class _MainShellState extends State<MainShell> {
   int _currentIndex = 0;
+
+  void _select(int index) => setState(() => _currentIndex = index);
 
   final List<Widget> _screens = const [
     HomeScreen(),
@@ -59,21 +70,25 @@ class _MainShellState extends State<MainShell> {
                 children: [
                   _NavBarItem(
                     icon: LucideIcons.home,
+                    label: 'Home',
                     isSelected: _currentIndex == 0,
                     onTap: () => setState(() => _currentIndex = 0),
                   ),
                   _NavBarItem(
                     icon: LucideIcons.users,
+                    label: 'Contacts',
                     isSelected: _currentIndex == 1,
                     onTap: () => setState(() => _currentIndex = 1),
                   ),
                   _NavBarItem(
                     icon: LucideIcons.calendar,
+                    label: 'Calendar',
                     isSelected: _currentIndex == 2,
                     onTap: () => setState(() => _currentIndex = 2),
                   ),
                   _NavBarItem(
                     icon: LucideIcons.settings,
+                    label: 'Settings',
                     isSelected: _currentIndex == 3,
                     onTap: () => setState(() => _currentIndex = 3),
                   ),
@@ -89,17 +104,29 @@ class _MainShellState extends State<MainShell> {
 
 class _NavBarItem extends StatelessWidget {
   final IconData icon;
+  final String label;
   final bool isSelected;
   final VoidCallback onTap;
 
   const _NavBarItem({
     required this.icon,
+    required this.label,
     required this.isSelected,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      selected: isSelected,
+      label: label,
+      excludeSemantics: true,
+      child: Tooltip(message: label, child: _buildTarget()),
+    );
+  }
+
+  Widget _buildTarget() {
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,

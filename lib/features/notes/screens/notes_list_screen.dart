@@ -5,6 +5,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/constants/app_routes.dart';
 import '../../../core/widgets/constrained_layout.dart';
 import '../../../core/repositories/note_repository.dart';
+import '../../../core/utils/reminder_time.dart';
 import '../../../models/note_with_contact.dart';
 
 class NotesListScreen extends StatefulWidget {
@@ -316,7 +317,7 @@ class _NotesListScreenState extends State<NotesListScreen> {
       if (difference.inMinutes == 0) return 'Just now';
       return '${difference.inMinutes}m ago';
     }
-    if (difference.inDays == 0 && date.day == now.day) {
+    if (isSameCalendarDay(date, now)) {
       return DateFormat.jm().format(date);
     }
     if (difference.inDays < 7) {

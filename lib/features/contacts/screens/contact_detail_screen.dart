@@ -15,6 +15,9 @@ import '../../../core/repositories/todo_repository.dart';
 import '../../../core/repositories/reminder_repository.dart';
 import '../../../core/repositories/call_repository.dart';
 import '../../../core/services/call_matching_service.dart';
+import '../../../core/services/notification_service.dart';
+import '../../../core/services/overlay_draft_service.dart';
+import '../../../core/utils/reminder_time.dart';
 import '../../../models/contact.dart';
 import '../../../models/note.dart';
 import '../../../models/todo_item.dart';
@@ -114,6 +117,53 @@ class _ContactDetailScreenState extends State<ContactDetailScreen> {
     }
   }
 
+  Future<void> _editContact() async {
+    await Navigator.pushNamed(context, AppRoutes.contactForm, arguments: _contact);
+    if (mounted) _loadData();
+  }
+
+  /// Deletes the contact with everything linked to it, after a confirmation
+  /// that says what will be lost.
+  Future<void> _deleteContact() async {
+    final contact = _contact;
+    if (contact == null) return;
+    String count(int n, String word) => '$n $word${n == 1 ? '' : 's'}';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Delete ${contact.name}?'),
+        content: Text(
+          'This also deletes ${count(_notes.length, 'note')}, ${count(_todos.length, 'task')}, '
+          '${count(_reminders.length, 'reminder')} and ${count(_calls.length, 'logged call')}. '
+          'This cannot be undone.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete', style: TextStyle(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      // Reminders are deleted with the contact, so their alarms must go too.
+      for (final reminder in _reminders) {
+        await NotificationService().cancelReminder(reminder.id);
+      }
+      await _contactRepo.delete(contact.id);
+      await OverlayDraftService().clearDraft(contact.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${contact.name} deleted')));
+      Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not delete: $e')));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -136,9 +186,17 @@ class _ContactDetailScreenState extends State<ContactDetailScreen> {
       appBar: AppBar(
         title: const Text('Contact Details'),
         actions: [
-          IconButton(
+          PopupMenuButton<String>(
             icon: const Icon(LucideIcons.moreHorizontal),
-            onPressed: () {},
+            tooltip: 'More',
+            onSelected: (value) => value == 'edit' ? _editContact() : _deleteContact(),
+            itemBuilder: (context) => const [
+              PopupMenuItem(value: 'edit', child: Text('Edit contact')),
+              PopupMenuItem(
+                value: 'delete',
+                child: Text('Delete contact', style: TextStyle(color: AppColors.error)),
+              ),
+            ],
           ),
           const SizedBox(width: AppSpacing.sm),
         ],
@@ -279,7 +337,7 @@ class _ContactDetailScreenState extends State<ContactDetailScreen> {
                       title: 'Reminders',
                       icon: LucideIcons.bell,
                       isExpanded: false,
-                      child: _RemindersList(reminders: _reminders),
+                      child: _RemindersList(reminders: _reminders, onChanged: _loadData),
                     ),
                     const SizedBox(height: AppSpacing.xxxl * 2), // FAB spacing
                   ],
@@ -309,7 +367,7 @@ class _ContactDetailScreenState extends State<ContactDetailScreen> {
   String _formatDate(DateTime date) {
     final now = DateTime.now();
     final difference = now.difference(date);
-    if (difference.inDays == 0) return 'Today at ${DateFormat.jm().format(date)}';
+    if (isSameCalendarDay(date, now)) return 'Today at ${DateFormat.jm().format(date)}';
     if (difference.inDays < 7) return DateFormat.EEEE().format(date);
     return DateFormat.yMMMd().format(date);
   }
@@ -702,8 +760,9 @@ class _CallsList extends StatelessWidget {
 
 class _RemindersList extends StatelessWidget {
   final List<Reminder> reminders;
+  final VoidCallback onChanged;
 
-  const _RemindersList({required this.reminders});
+  const _RemindersList({required this.reminders, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {
@@ -720,7 +779,15 @@ class _RemindersList extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
       child: Column(
-        children: reminders.map((r) => ReminderCard(reminder: r)).toList(),
+        children: reminders
+            .map(
+              (r) => ReminderCard(
+                reminder: r,
+                onTap: () =>
+                    Navigator.pushNamed(context, AppRoutes.reminderDetail, arguments: r.id).then((_) => onChanged()),
+              ),
+            )
+            .toList(),
       ),
     );
   }

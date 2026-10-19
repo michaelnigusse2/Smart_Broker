@@ -47,7 +47,7 @@ jobs:
         run: bash tool/coverage_gate.sh 40 # raise to 60 at M2, 70 at M3
 
       - name: Dead handlers / print()
-        run: bash tool/no_dead_handlers.sh --warn # make it fail (drop --warn) after T-020
+        run: bash tool/no_dead_handlers.sh
 
       - uses: actions/cache@v4
         with:

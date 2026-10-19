@@ -403,7 +403,16 @@ class _NoteDetailScreenState extends State<NoteDetailScreen> {
                   ],
                 ),
                 const SizedBox(height: AppSpacing.sm),
-                ..._reminders.map((r) => ReminderCard(reminder: r)),
+                ..._reminders.map(
+                  (r) => ReminderCard(
+                    reminder: r,
+                    onTap: () => Navigator.pushNamed(
+                      context,
+                      AppRoutes.reminderDetail,
+                      arguments: r.id,
+                    ).then((_) => _loadData()),
+                  ),
+                ),
               ],
 
               const SizedBox(height: AppSpacing.xxxl),

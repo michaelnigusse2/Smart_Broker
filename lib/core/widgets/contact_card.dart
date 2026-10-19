@@ -4,6 +4,7 @@ import 'package:lucide_icons/lucide_icons.dart';
 
 import '../../models/unified_contact.dart';
 import '../theme/app_theme.dart';
+import '../utils/reminder_time.dart';
 import 'info_chip.dart';
 
 class ContactCard extends StatelessWidget {
@@ -118,7 +119,7 @@ class ContactCard extends StatelessWidget {
     if (date.millisecondsSinceEpoch == 0) return '—';
     final now = DateTime.now();
     final difference = now.difference(date);
-    if (difference.inDays == 0) return DateFormat.jm().format(date);
+    if (isSameCalendarDay(date, now)) return DateFormat.jm().format(date);
     if (difference.inDays < 7) return DateFormat.E().format(date);
     return DateFormat.MMMd().format(date);
   }

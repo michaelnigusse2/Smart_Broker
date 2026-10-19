@@ -5,7 +5,9 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'dart:io' show Platform;
 import '../../../core/database/seed_data.dart';
 import '../../../core/repositories/contact_repository.dart';
+import '../../../core/constants/app_routes.dart';
 import '../../../core/services/app_log.dart';
+import '../../../core/services/local_data_service.dart';
 import '../../../core/services/notification_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/ai_consent_dialog.dart';
@@ -192,6 +194,49 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _resetLocalData() async {
+    Future<bool> confirm(String title, String body, String action) async =>
+        await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Text(title),
+            content: Text(body),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: Text(action, style: const TextStyle(color: AppColors.error)),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (!await confirm(
+      'Reset local data?',
+      'This deletes every contact, note, task, reminder and call stored in SmartBroker on this phone. '
+          'Your settings and AI key are kept.',
+      'Continue',
+    )) {
+      return;
+    }
+    if (!mounted) return;
+    if (!await confirm('Are you sure?', 'This cannot be undone.', 'Delete everything')) return;
+    if (!mounted) return;
+
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await LocalDataService().resetAll();
+      messenger.showSnackBar(const SnackBar(content: Text('Local data deleted')));
+      // Rebuild every tab from the now-empty database.
+      navigator.pushNamedAndRemoveUntil(AppRoutes.shell, (_) => false);
+    } catch (e, st) {
+      AppLog.e('Settings', 'reset failed', e, st);
+      messenger.showSnackBar(SnackBar(content: Text('Could not reset: $e')));
+    }
+  }
+
   Future<void> _loadDemoData() async {
     final messenger = ScaffoldMessenger.of(context);
     try {
@@ -326,16 +371,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: ListView(
           children: [
             const SizedBox(height: AppSpacing.md),
-            _buildSectionHeader(context, 'Appearance'),
-            ListTile(
-              leading: const Icon(LucideIcons.moon),
-              title: const Text('Theme'),
-              subtitle: const Text('Light (Default)'),
-              trailing: const Icon(LucideIcons.chevronRight, size: 20),
-              onTap: () {},
-            ),
-            const Divider(height: 1),
-
             _buildSectionHeader(context, 'AI Integration'),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.md),
@@ -598,17 +633,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 trailing: const Icon(LucideIcons.chevronRight, size: 20),
                 onTap: _showSimulateCallDialog,
               ),
+            const Divider(height: 1),
+
+            _buildSectionHeader(context, 'Data'),
             ListTile(
-              leading: const Icon(LucideIcons.trash2),
-              title: const Text('Reset Data'),
-              trailing: const Icon(LucideIcons.chevronRight, size: 20),
-              onTap: () {},
+              leading: const Icon(LucideIcons.trash2, color: AppColors.error),
+              title: const Text('Reset local data', style: TextStyle(color: AppColors.error)),
+              subtitle: const Text('Delete all contacts, notes, tasks, reminders and calls on this phone'),
+              onTap: _resetLocalData,
             ),
 
             const SizedBox(height: AppSpacing.xxl),
             const Center(
               child: Text(
-                'SmartBroker v1.0.0\nPhase 8 Call Detection',
+                'SmartBroker v1.0.0',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: AppColors.textTertiary, fontSize: 12),
               ),
