@@ -27,6 +27,10 @@ class _CallOverlayScreenState extends State<CallOverlayScreen> {
   List<String> _pendingTasks = [];
   String _lastNoteSummary = '';
   int? _startedAt;
+
+  /// Status bar height (logical px) measured by the main app. The overlay
+  /// window starts at the very top of the screen and gets no insets itself.
+  double _topInset = 0;
   int? _endedAt;
 
   final _noteController = TextEditingController();
@@ -93,6 +97,7 @@ class _CallOverlayScreenState extends State<CallOverlayScreen> {
       _lastNoteSummary = state['lastNoteSummary'] as String? ?? '';
       _startedAt = state['startedAt'] as int?;
       _endedAt = state['endedAt'] as int?;
+      _topInset = (state['topInset'] as num?)?.toDouble() ?? _topInset;
     });
   }
 
@@ -116,12 +121,14 @@ class _CallOverlayScreenState extends State<CallOverlayScreen> {
     await _draftService.saveDraft(_draftKey, text);
     await CallOverlayState.setPendingReview(contactId: _contactId, text: text);
     // Best effort: if the app is listening it opens AI Review straight away.
+    // Not awaited without a timeout: this call can hang in the overlay → app
+    // direction, which left the overlay stuck on the form.
     try {
       await FlutterOverlayWindow.shareData({
         'action': 'openAiReview',
         'contactId': _contactId,
         'noteText': text,
-      });
+      }).timeout(const Duration(seconds: 1));
     } catch (_) {}
     if (!mounted) return;
     setState(() => _submitted = true);
@@ -171,7 +178,7 @@ class _CallOverlayScreenState extends State<CallOverlayScreen> {
       resizeToAvoidBottomInset: false,
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.sm),
+          padding: EdgeInsets.fromLTRB(AppSpacing.sm, AppSpacing.sm + _topInset, AppSpacing.sm, AppSpacing.sm),
           child: Material(
             color: AppColors.surface,
             elevation: 8,

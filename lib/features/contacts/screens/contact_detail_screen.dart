@@ -233,7 +233,7 @@ class _ContactDetailScreenState extends State<ContactDetailScreen> {
                             Icon(LucideIcons.phone, size: 14, color: AppColors.textSecondary),
                             const SizedBox(width: AppSpacing.xs),
                             Text(
-                              contact.phoneNumber,
+                              contact.phoneNumber.trim(),
                               style: theme.textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary),
                             ),
                           ],

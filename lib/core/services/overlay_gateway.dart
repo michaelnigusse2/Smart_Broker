@@ -25,6 +25,10 @@ class OverlayGateway {
     flag: OverlayFlag.focusPointer,
     enableDrag: true,
     positionGravity: PositionGravity.none,
+    // Without an explicit start, flutter_overlay_window 0.5.0 offsets the
+    // window by -statusBarHeight but converts that pixel value as dp, which
+    // pushed the overlay's header off the top of the screen.
+    startPosition: const OverlayPosition(0, 0),
     visibility: NotificationVisibility.visibilityPrivate,
     overlayTitle: 'SmartBroker',
     overlayContent: 'Call notes',

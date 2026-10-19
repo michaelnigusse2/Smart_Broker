@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../repositories/note_repository.dart';
 import 'app_log.dart';
+import 'overlay_draft_service.dart';
 
 /// State shared between the main app and the call overlay.
 ///
@@ -107,10 +108,11 @@ class CallOverlayState {
   /// the text and saves it itself.
   static Future<String?> savePendingNote(Map<String, dynamic> pending) async {
     try {
-      return await NoteRepository().saveNote(
-        contactId: pending['contactId'] as String,
-        rawText: pending['rawText'] as String,
-      );
+      final contactId = pending['contactId'] as String;
+      final id = await NoteRepository().saveNote(contactId: contactId, rawText: pending['rawText'] as String);
+      // The note is saved now; the overlay draft would otherwise come back on the next call.
+      await OverlayDraftService().clearDraft(contactId);
+      return id;
     } catch (e, st) {
       AppLog.e('CallOverlayState', 'could not save the note from the overlay', e, st);
       return null;

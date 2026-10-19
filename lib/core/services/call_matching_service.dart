@@ -208,6 +208,7 @@ class CallMatchingService {
     final state = {
       'phase': phase,
       'number': number,
+      'topInset': _statusBarHeight(),
       'startedAt': DateTime.now().millisecondsSinceEpoch,
       if (number != null) ...await _contextFor(number),
     };
@@ -242,6 +243,16 @@ class CallMatchingService {
     }
   }
 
+  /// Status bar height in logical pixels, so the overlay can keep its header
+  /// below it (the overlay window itself receives no insets).
+  double _statusBarHeight() {
+    final views = WidgetsBinding.instance.platformDispatcher.views;
+    if (views.isEmpty) return 28;
+    final view = views.first;
+    final top = view.viewPadding.top / view.devicePixelRatio;
+    return top > 0 ? top : 28;
+  }
+
   int _overlayHeightPx() {
     final views = WidgetsBinding.instance.platformDispatcher.views;
     if (views.isEmpty) return 1200;
@@ -274,7 +285,10 @@ class CallMatchingService {
       'contactId': contact.id,
       'contactName': contact.name,
       'pendingTasks': todos.where((t) => !t.isCompleted).take(5).map((t) => t.title).toList(),
-      'lastNoteSummary': notes.isNotEmpty ? notes.first.aiSummary : '',
+      // An unprocessed note has no summary yet: show its text instead.
+      'lastNoteSummary': notes.isEmpty
+          ? ''
+          : (notes.first.aiSummary.trim().isNotEmpty ? notes.first.aiSummary : notes.first.rawText).trim(),
     };
   }
 

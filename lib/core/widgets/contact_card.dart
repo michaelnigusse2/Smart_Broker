@@ -81,7 +81,7 @@ class ContactCard extends StatelessWidget {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          contact.phoneNumber,
+                          contact.phoneNumber.trim(),
                           style: theme.textTheme.bodySmall?.copyWith(fontSize: 12),
                         ),
                       ],
@@ -99,7 +99,7 @@ class ContactCard extends StatelessWidget {
                       if (hasTasks) ...[
                         const SizedBox(height: 4),
                         InfoChip(
-                          label: '${contact.pendingTasksCount} tasks',
+                          label: '${contact.pendingTasksCount} ${contact.pendingTasksCount == 1 ? 'task' : 'tasks'}',
                           color: AppColors.primary,
                         ),
                       ],
