@@ -1,5 +1,6 @@
 import 'package:uuid/uuid.dart';
 import '../database/database_helper.dart';
+import '../database/sql_like.dart';
 import '../../models/note.dart';
 import '../../models/note_with_contact.dart';
 
@@ -51,10 +52,10 @@ class NoteRepository {
       SELECT notes.*, contacts.name AS contactName, contacts.avatarUrl AS contactAvatarUrl
       FROM notes
       INNER JOIN contacts ON notes.contactId = contacts.id
-      WHERE notes.rawText LIKE ? OR notes.aiSummary LIKE ?
+      WHERE notes.rawText LIKE ? ESCAPE '\\' OR notes.aiSummary LIKE ? ESCAPE '\\'
       ORDER BY notes.createdAt DESC
     ''',
-      ['%$query%', '%$query%'],
+      [likeContains(query), likeContains(query)],
     );
     return maps
         .map(
@@ -103,6 +104,15 @@ class NoteRepository {
       );
       return id;
     });
+  }
+
+  /// Total notes, and how many have no AI summary yet.
+  Future<({int total, int unprocessed})> counts() async {
+    final db = await _db.database;
+    final row = (await db.rawQuery(
+      "SELECT COUNT(*) AS total, COALESCE(SUM(CASE WHEN aiSummary = '' THEN 1 ELSE 0 END), 0) AS unprocessed FROM notes",
+    )).first;
+    return (total: row['total'] as int, unprocessed: row['unprocessed'] as int);
   }
 
   Future<String> insert(Note note) async {

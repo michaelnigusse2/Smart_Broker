@@ -7,6 +7,9 @@ class TodoItem {
   final DateTime createdAt;
   final DateTime? completedAt; // NEW
 
+  /// When the task is due (date and time), if it has a due date.
+  final DateTime? dueAt;
+
   const TodoItem({
     required this.id,
     required this.contactId,
@@ -15,6 +18,7 @@ class TodoItem {
     this.isCompleted = false,
     required this.createdAt,
     this.completedAt, // NEW
+    this.dueAt,
   });
 
   Map<String, dynamic> toMap() {
@@ -26,6 +30,7 @@ class TodoItem {
       'isCompleted': isCompleted ? 1 : 0,
       'createdAt': createdAt.millisecondsSinceEpoch,
       'completedAt': completedAt?.millisecondsSinceEpoch,
+      'dueAt': dueAt?.millisecondsSinceEpoch,
     };
   }
 
@@ -38,6 +43,7 @@ class TodoItem {
       isCompleted: map['isCompleted'] == 1,
       createdAt: DateTime.fromMillisecondsSinceEpoch(map['createdAt']),
       completedAt: map['completedAt'] != null ? DateTime.fromMillisecondsSinceEpoch(map['completedAt']) : null,
+      dueAt: map['dueAt'] != null ? DateTime.fromMillisecondsSinceEpoch(map['dueAt'] as int) : null,
     );
   }
 
@@ -50,6 +56,8 @@ class TodoItem {
     DateTime? createdAt,
     DateTime? completedAt,
     bool clearCompletedAt = false,
+    DateTime? dueAt,
+    bool clearDueAt = false,
   }) {
     return TodoItem(
       id: id ?? this.id,
@@ -59,6 +67,7 @@ class TodoItem {
       createdAt: createdAt ?? this.createdAt,
       noteId: noteId ?? this.noteId,
       completedAt: clearCompletedAt ? null : (completedAt ?? this.completedAt),
+      dueAt: clearDueAt ? null : (dueAt ?? this.dueAt),
     );
   }
 }

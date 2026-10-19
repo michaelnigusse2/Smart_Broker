@@ -1,3 +1,5 @@
+import 'phone_contact.dart';
+
 class Contact {
   final String id;
   final String name;
@@ -6,6 +8,9 @@ class Contact {
   final String company;
   final String role;
   final DateTime lastInteraction;
+
+  /// Open tasks for this contact. Computed by [ContactRepository] queries,
+  /// never stored by the app (the old column is left unused).
   final int pendingTasksCount;
   final String avatarUrl;
 
@@ -20,6 +25,9 @@ class Contact {
     this.pendingTasksCount = 0,
     this.avatarUrl = '',
   });
+
+  /// Key that identifies this contact's number (see [PhoneContact.matchKey]).
+  String get phoneKey => PhoneContact.matchKey(phoneNumber);
 
   String get initials {
     // Split on any whitespace and drop empty parts: "John ", "  Ann" or
@@ -41,8 +49,8 @@ class Contact {
       'company': company,
       'role': role,
       'lastInteraction': lastInteraction.millisecondsSinceEpoch,
-      'pendingTasksCount': pendingTasksCount,
       'avatarUrl': avatarUrl,
+      'phoneKey': phoneKey,
     };
   }
 
@@ -55,7 +63,7 @@ class Contact {
       company: map['company'] ?? '',
       role: map['role'] ?? '',
       lastInteraction: DateTime.fromMillisecondsSinceEpoch(map['lastInteraction']),
-      pendingTasksCount: map['pendingTasksCount'] ?? 0,
+      pendingTasksCount: (map['openTaskCount'] ?? map['pendingTasksCount'] ?? 0) as int,
       avatarUrl: map['avatarUrl'] ?? '',
     );
   }

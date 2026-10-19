@@ -6,6 +6,8 @@ import 'package:smart_broker/core/repositories/note_repository.dart';
 import 'package:smart_broker/core/repositories/reminder_repository.dart';
 import 'package:smart_broker/core/repositories/todo_repository.dart';
 import 'package:smart_broker/models/call_entry.dart';
+import 'package:smart_broker/models/contact.dart';
+import 'package:smart_broker/models/todo_item.dart';
 
 import '../helpers/fixtures.dart';
 import '../helpers/test_db.dart';
@@ -55,6 +57,116 @@ void main() {
 
       expect((await ContactRepository().search('alpha')).map((c) => c.id), ['a']);
       expect((await ContactRepository().search('000020')).map((c) => c.id), ['b']);
+    });
+  });
+
+  group('one contact per number', () {
+    test('saving a known number again returns the existing contact', () async {
+      final first = await insertContact(id: 'first', phone: '+251 911 000 001');
+      final id = await ContactRepository().insert(
+        Contact(id: 'second', name: 'Same Person', phoneNumber: '0911-000-001', lastInteraction: DateTime(2026)),
+      );
+
+      expect(id, first.id);
+      expect(await ContactRepository().getAll(), hasLength(1));
+    });
+
+    test('findByPhone matches any formatting and ignores numbers without digits', () async {
+      await insertContact(id: 'a', phone: '+251911000001');
+
+      expect((await ContactRepository().findByPhone('0911 000 001'))?.id, 'a');
+      expect(await ContactRepository().findByPhone('0911000002'), isNull);
+      expect(await ContactRepository().findByPhone(''), isNull);
+    });
+
+    test("changing a number to another contact's number fails", () async {
+      await insertContact(id: 'a', phone: '+251911000001');
+      final b = await insertContact(id: 'b', name: 'Test Client Two', phone: '+251911000002');
+
+      await expectLater(
+        ContactRepository().update(b.copyWith(phoneNumber: '0911000001')),
+        throwsA(anything),
+      );
+    });
+
+    test('touch only moves lastInteraction forward', () async {
+      final c = await insertContact(lastInteraction: DateTime(2026, 5, 1));
+
+      await ContactRepository().touch(c.id, DateTime(2026, 4, 1));
+      expect((await ContactRepository().getById(c.id))!.lastInteraction, DateTime(2026, 5, 1));
+
+      await ContactRepository().touch(c.id, DateTime(2026, 6, 1));
+      expect((await ContactRepository().getById(c.id))!.lastInteraction, DateTime(2026, 6, 1));
+    });
+
+    test('the open-task count is always live', () async {
+      final c = await insertContact();
+      await insertTodo(contactId: c.id, title: 'A');
+      await insertTodo(contactId: c.id, title: 'B');
+      expect(await _pendingCount(c.id), 2);
+
+      // Even when tasks change outside TodoRepository.
+      final db = await DatabaseHelper().database;
+      await db.update('todos', {'isCompleted': 1}, where: 'title = ?', whereArgs: ['A']);
+      expect(await _pendingCount(c.id), 1);
+    });
+  });
+
+  group('CallRepository', () {
+    test('the same call is stored once', () async {
+      final c = await insertContact();
+      final call = CallEntry(
+        id: '',
+        contactId: c.id,
+        type: CallType.outgoing,
+        duration: const Duration(seconds: 40),
+        timestamp: DateTime(2026, 10, 1, 9, 30),
+      );
+
+      final first = await CallRepository().insert(call);
+      final second = await CallRepository().insert(call);
+
+      expect(second, first);
+      expect(await _count('calls'), 1);
+      expect(await CallRepository().exists(c.id, call.timestamp), isTrue);
+      expect(await CallRepository().exists(c.id, DateTime(2026, 10, 1, 9, 31)), isFalse);
+    });
+  });
+
+  group('search', () {
+    test('% and _ typed by the user are matched literally', () async {
+      await insertContact(id: 'pct', name: '100% Homes', phone: '+251911000011');
+      await insertContact(id: 'plain', name: '1000 Homes', phone: '+251911000012');
+      await insertContact(id: 'under', name: 'Bole_Office', phone: '+251911000013');
+      await insertContact(id: 'other', name: 'Bole Office', phone: '+251911000014');
+
+      expect((await ContactRepository().search('0%')).map((c) => c.id), ['pct']);
+      expect((await ContactRepository().search('e_O')).map((c) => c.id), ['under']);
+    });
+
+    test('note counts include notes waiting for AI Review', () async {
+      final c = await insertContact();
+      final first = await NoteRepository().saveNote(contactId: c.id, rawText: 'one');
+      await NoteRepository().saveNote(contactId: c.id, rawText: 'two');
+      final note = await NoteRepository().getById(first);
+      await NoteRepository().update(note!.copyWith(aiSummary: 'Summary'));
+
+      final counts = await NoteRepository().counts();
+      expect(counts.total, 2);
+      expect(counts.unprocessed, 1);
+    });
+
+    test('a task keeps its due date', () async {
+      final c = await insertContact();
+      final due = DateTime(2026, 11, 2, 9);
+      final id = await TodoRepository().insert(
+        TodoItem(id: '', contactId: c.id, title: 'Send offer', createdAt: DateTime(2026, 10, 1), dueAt: due),
+      );
+
+      final saved = (await TodoRepository().getByContactId(c.id)).single;
+      expect(saved.id, id);
+      expect(saved.dueAt, due);
+      expect(saved.copyWith(clearDueAt: true).dueAt, isNull);
     });
   });
 

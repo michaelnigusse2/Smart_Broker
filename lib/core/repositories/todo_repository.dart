@@ -1,4 +1,3 @@
-import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 import '../database/database_helper.dart';
 import '../../models/todo_item.dart';
@@ -96,49 +95,21 @@ class TodoRepository {
     return maps.map((m) => TodoItem.fromMap(m)).toList();
   }
 
-  Future<void> _updateContactTasksCount(DatabaseExecutor db, String contactId) => recountForContact(db, contactId);
-
-  /// Recomputes `contacts.pendingTasksCount`. Takes an executor so it can run
-  /// inside a transaction.
-  static Future<void> recountForContact(DatabaseExecutor db, String contactId) async {
-    final countMaps = await db.query(
-      'todos',
-      columns: ['COUNT(*)'],
-      where: 'contactId = ? AND isCompleted = 0',
-      whereArgs: [contactId],
-    );
-    final count = Sqflite.firstIntValue(countMaps) ?? 0;
-
-    await db.update(
-      'contacts',
-      {'pendingTasksCount': count},
-      where: 'id = ?',
-      whereArgs: [contactId],
-    );
-  }
-
   Future<String> insert(TodoItem todo) async {
     final db = await _db.database;
     final id = todo.id.isEmpty ? _uuid.v4() : todo.id;
     await db.insert('todos', todo.copyWith(id: id).toMap());
-    await _updateContactTasksCount(db, todo.contactId);
     return id;
   }
 
   Future<void> update(TodoItem todo) async {
     final db = await _db.database;
     await db.update('todos', todo.toMap(), where: 'id = ?', whereArgs: [todo.id]);
-    await _updateContactTasksCount(db, todo.contactId);
   }
 
   Future<void> delete(String id) async {
     final db = await _db.database;
-    final maps = await db.query('todos', where: 'id = ?', whereArgs: [id]);
-    if (maps.isNotEmpty) {
-      final contactId = maps.first['contactId'] as String;
-      await db.delete('todos', where: 'id = ?', whereArgs: [id]);
-      await _updateContactTasksCount(db, contactId);
-    }
+    await db.delete('todos', where: 'id = ?', whereArgs: [id]);
   }
 
   /// Sets a task's completion explicitly (used by bulk actions).
@@ -154,7 +125,6 @@ class TodoRepository {
       clearCompletedAt: !completed,
     );
     await db.update('todos', updated.toMap(), where: 'id = ?', whereArgs: [id]);
-    await _updateContactTasksCount(db, todo.contactId);
   }
 
   Future<void> toggleCompleted(String id) async {
@@ -168,6 +138,5 @@ class TodoRepository {
       clearCompletedAt: todo.isCompleted,
     );
     await db.update('todos', updated.toMap(), where: 'id = ?', whereArgs: [id]);
-    await _updateContactTasksCount(db, todo.contactId);
   }
 }

@@ -278,13 +278,7 @@ class CallMatchingService {
     };
   }
 
-  Future<Contact?> _findContact(String number) async {
-    final contacts = await _contactRepo.getAll();
-    for (final c in contacts) {
-      if (PhoneContact.numbersMatch(c.phoneNumber, number)) return c;
-    }
-    return null;
-  }
+  Future<Contact?> _findContact(String number) => _contactRepo.findByPhone(number);
 
   // ── Finished call (log + prompt) ───────────────────────────────
 
@@ -320,8 +314,8 @@ class CallMatchingService {
       final match = await _findContact(event.phoneNumber);
       final isKnownContact = match != null;
       if (match != null) {
-        contact = match.copyWith(lastInteraction: event.timestamp);
-        await _contactRepo.update(contact);
+        await _contactRepo.touch(match.id, event.timestamp);
+        contact = match;
         AppLog.d(_tag, 'matched to contact ${match.id}');
       } else {
         // TODO: unknown numbers — decide between auto-creating and an "unassigned calls" inbox.
@@ -335,6 +329,12 @@ class CallMatchingService {
         );
         contact = (await _contactRepo.getById(id))!;
         AppLog.d(_tag, 'created contact $id for unknown caller');
+      }
+
+      // The call log can report the same call again (e.g. after a restart).
+      if (await _callRepo.exists(contact.id, event.timestamp)) {
+        AppLog.d(_tag, 'call already logged, skipping');
+        return contact;
       }
 
       final callId = await _callRepo.insert(

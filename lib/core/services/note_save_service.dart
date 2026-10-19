@@ -3,7 +3,6 @@ import 'package:uuid/uuid.dart';
 import '../../models/reminder.dart';
 import '../../models/todo_item.dart';
 import '../database/database_helper.dart';
-import '../repositories/todo_repository.dart';
 import 'notification_service.dart';
 
 /// What the user approved on the AI Review screen.
@@ -110,7 +109,6 @@ class NoteSaveService {
           ).toMap(),
         );
       }
-      await TodoRepository.recountForContact(txn, review.contactId);
 
       // ── Reminder ────────────────────────────────────────────────
       final reminders = (await txn.query(
