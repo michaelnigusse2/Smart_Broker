@@ -145,7 +145,9 @@ no empty `onTap`/`onPressed`, no `print`) → debug APK, uploaded as a build art
 `flutter pub outdated` to an issue. Protect `main` by requiring the `flutter` job.
 
 On Windows without a terminal, `tool/dev_runner.bat` runs a fixed set of these commands
-when asked (`build_logs/request.txt` → `build_logs/result.log`).
+when asked (`build_logs/request.txt` → `build_logs/result.log`). `tool/emulator.bat` starts
+the Android Studio emulator, installs the debug APK and opens the app; `tool/adb_bridge.bat`
+accepts a few fixed commands (screenshot, tap, swipe, type, keys) for remote demos.
 
 Call detection and the overlay only work on a real Android device. Use
 **Settings → Developer Tools → Simulate Call** to test the call-logging flow without one.
