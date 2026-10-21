@@ -4,6 +4,7 @@ import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 
 import 'core/constants/app_routes.dart';
@@ -36,6 +37,9 @@ import 'features/todos/screens/tasks_screen.dart';
 void main() {
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
+    // Draw behind the status and navigation bars on every Android version.
+    unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
+    SystemChrome.setSystemUIOverlayStyle(AppTheme.systemBars(Brightness.light));
     FlutterError.onError = (details) {
       FlutterError.presentError(details);
       // Debug builds log the full report (it names the widget and source line,
@@ -191,6 +195,12 @@ class _SmartBrokerAppState extends State<SmartBrokerApp> with WidgetsBindingObse
       title: 'SmartBroker',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
+      // Keeps the status and navigation bars see-through on every frame, so
+      // nothing (a plugin, an older Android default) can turn them black.
+      builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
+        value: AppTheme.systemBars(Theme.of(context).brightness),
+        child: child!,
+      ),
       navigatorKey: AppRoutes.globalNavigatorKey,
       initialRoute: widget.showOnboarding ? AppRoutes.onboarding : AppRoutes.shell,
       routes: {

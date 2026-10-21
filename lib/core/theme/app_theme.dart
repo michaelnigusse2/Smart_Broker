@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 /// Espresso: a cream canvas, espresso text and buttons, caramel accents.
 ///
@@ -283,6 +284,22 @@ class AppRadius {
 }
 
 class AppTheme {
+  /// See-through status and navigation bars, so the canvas runs edge to edge
+  /// as on the boards (older Android versions otherwise draw a grey band).
+  static SystemUiOverlayStyle systemBars(Brightness brightness) {
+    final light = brightness == Brightness.light;
+    return SystemUiOverlayStyle(
+      statusBarColor: const Color(0x00000000),
+      statusBarIconBrightness: light ? Brightness.dark : Brightness.light,
+      statusBarBrightness: brightness,
+      systemNavigationBarColor: const Color(0x00000000),
+      systemNavigationBarDividerColor: const Color(0x00000000),
+      systemNavigationBarIconBrightness: light ? Brightness.dark : Brightness.light,
+      systemNavigationBarContrastEnforced: false,
+      systemStatusBarContrastEnforced: false,
+    );
+  }
+
   static ThemeData get lightTheme => _build(SbPalette.light, Brightness.light);
   static ThemeData get darkTheme => _build(SbPalette.dark, Brightness.dark);
 
@@ -375,6 +392,7 @@ class AppTheme {
       canvasColor: p.canvas,
       extensions: [p],
       appBarTheme: AppBarTheme(
+        systemOverlayStyle: AppTheme.systemBars(brightness),
         backgroundColor: p.canvas,
         foregroundColor: p.text,
         elevation: 0,
