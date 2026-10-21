@@ -13,6 +13,7 @@ import '../../../core/services/profile_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/sb_widgets.dart';
 import '../../../core/utils/ethiopian_date.dart';
+import '../../../core/utils/waiting_on_you.dart';
 import '../../../core/widgets/constrained_layout.dart';
 import '../../../models/contact.dart';
 import '../../../models/reminder.dart';
@@ -40,6 +41,8 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
 
   /// Open reminders whose time has passed (today or earlier).
   List<Reminder> _late = [];
+
+  /// Open promises you owe.
   List<TodoItem> _pending = [];
   int _notesToFinish = 0;
   bool _loading = true;
@@ -87,7 +90,8 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
         _upcoming = reminders.where((r) => !r.dateTime.isBefore(cutoff) && r.dateTime.isBefore(endOfDay)).toList()
           ..sort((a, b) => a.dateTime.compareTo(b.dateTime));
         _late = reminders.where((r) => r.dateTime.isBefore(cutoff)).toList();
-        _pending = todos;
+        // Today is about what you owe; what others owe you lives on Promises.
+        _pending = todos.where((t) => t.owedBy == OwedBy.me).toList();
         _notesToFinish = notes.unprocessed;
         _loading = false;
         _failed = false;
@@ -133,35 +137,15 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
     return mine.isEmpty ? null : mine.first;
   }
 
-  /// People with open promises or missed reminders: anyone late first, then
-  /// whoever is due soonest. The person opened up at the top of the agenda is
-  /// left out, since what you owe them is already shown there.
-  List<({Contact contact, bool late})> get _waiting {
-    final now = _now;
-    final nextUp = _upcoming.isEmpty ? null : _upcoming.first.contactId;
-    final late = <String, bool>{};
-    final soonest = <String, DateTime>{};
-    void note(String contactId, DateTime? due, bool overdue) {
-      if (contactId == nextUp || !_contacts.containsKey(contactId)) return;
-      late[contactId] = (late[contactId] ?? false) || overdue;
-      final when = due ?? DateTime(9999);
-      final current = soonest[contactId];
-      if (current == null || when.isBefore(current)) soonest[contactId] = when;
-    }
-
-    for (final todo in _pending) {
-      note(todo.contactId, todo.dueAt, todo.dueAt != null && todo.dueAt!.isBefore(now));
-    }
-    for (final reminder in _late) {
-      note(reminder.contactId, reminder.dateTime, true);
-    }
-    final rows = [for (final entry in late.entries) (contact: _contacts[entry.key]!, late: entry.value)];
-    rows.sort((a, b) {
-      if (a.late != b.late) return a.late ? -1 : 1;
-      return soonest[a.contact.id]!.compareTo(soonest[b.contact.id]!);
-    });
-    return rows;
-  }
+  /// People waiting on you, leaving out the person opened up at the top of
+  /// the agenda, since what you owe them is already shown there.
+  List<WaitingPerson> get _waiting => waitingOnYou(
+    pending: _pending,
+    missed: _late,
+    contacts: _contacts,
+    now: _now,
+    except: _upcoming.isEmpty ? null : _upcoming.first.contactId,
+  );
 
   // ── Build ──────────────────────────────────────────────────────
 
@@ -786,7 +770,7 @@ class _NextUp extends StatelessWidget {
 class _WaitingOnYou extends StatelessWidget {
   const _WaitingOnYou({required this.people, required this.onTap});
 
-  final List<({Contact contact, bool late})> people;
+  final List<WaitingPerson> people;
   final VoidCallback onTap;
 
   @override

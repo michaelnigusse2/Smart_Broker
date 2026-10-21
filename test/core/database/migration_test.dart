@@ -211,6 +211,8 @@ void main() {
       final todo = (await db.query('todos', where: 'id = ?', whereArgs: ['t1'])).single;
       expect(todo.containsKey('dueAt'), isTrue);
       expect(todo['dueAt'], isNull);
+      // v3: promises made before it are all yours to keep.
+      expect(todo['owedBy'], 'me');
       expect(await db.query('unassigned_calls'), isEmpty);
 
       await expectLater(

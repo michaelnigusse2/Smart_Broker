@@ -1,3 +1,12 @@
+/// Who has to deliver a promise: you (the default), or the other person.
+enum OwedBy {
+  me,
+  them
+  ;
+
+  static OwedBy fromName(Object? name) => name == 'them' ? OwedBy.them : OwedBy.me;
+}
+
 class TodoItem {
   final String id;
   final String contactId;
@@ -10,6 +19,9 @@ class TodoItem {
   /// When the task is due (date and time), if it has a due date.
   final DateTime? dueAt;
 
+  /// You owe it to them, or they owe it to you.
+  final OwedBy owedBy;
+
   const TodoItem({
     required this.id,
     required this.contactId,
@@ -19,6 +31,7 @@ class TodoItem {
     required this.createdAt,
     this.completedAt, // NEW
     this.dueAt,
+    this.owedBy = OwedBy.me,
   });
 
   Map<String, dynamic> toMap() {
@@ -31,6 +44,7 @@ class TodoItem {
       'createdAt': createdAt.millisecondsSinceEpoch,
       'completedAt': completedAt?.millisecondsSinceEpoch,
       'dueAt': dueAt?.millisecondsSinceEpoch,
+      'owedBy': owedBy.name,
     };
   }
 
@@ -44,6 +58,7 @@ class TodoItem {
       createdAt: DateTime.fromMillisecondsSinceEpoch(map['createdAt']),
       completedAt: map['completedAt'] != null ? DateTime.fromMillisecondsSinceEpoch(map['completedAt']) : null,
       dueAt: map['dueAt'] != null ? DateTime.fromMillisecondsSinceEpoch(map['dueAt'] as int) : null,
+      owedBy: OwedBy.fromName(map['owedBy']),
     );
   }
 
@@ -58,6 +73,7 @@ class TodoItem {
     bool clearCompletedAt = false,
     DateTime? dueAt,
     bool clearDueAt = false,
+    OwedBy? owedBy,
   }) {
     return TodoItem(
       id: id ?? this.id,
@@ -68,6 +84,7 @@ class TodoItem {
       noteId: noteId ?? this.noteId,
       completedAt: clearCompletedAt ? null : (completedAt ?? this.completedAt),
       dueAt: clearDueAt ? null : (dueAt ?? this.dueAt),
+      owedBy: owedBy ?? this.owedBy,
     );
   }
 }

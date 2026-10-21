@@ -17,7 +17,7 @@ abstract class Migration {
   Future<void> up(DatabaseExecutor db);
 }
 
-const List<Migration> migrations = [MigrationV2()];
+const List<Migration> migrations = [MigrationV2(), MigrationV3()];
 
 /// Runs every migration after [from] up to and including [to], in order.
 Future<void> runMigrations(DatabaseExecutor db, int from, int to) async {
@@ -26,6 +26,23 @@ Future<void> runMigrations(DatabaseExecutor db, int from, int to) async {
   for (final step in steps) {
     AppLog.i('Database', 'migrating to v${step.version}: ${step.description}');
     await step.up(db);
+  }
+}
+
+/// v3: promises can be owed either way. Every existing one is yours to keep
+/// ("me"), so nothing changes for data already on the phone.
+class MigrationV3 extends Migration {
+  const MigrationV3();
+
+  @override
+  int get version => 3;
+
+  @override
+  String get description => 'who owes each promise';
+
+  @override
+  Future<void> up(DatabaseExecutor db) async {
+    await db.execute("ALTER TABLE todos ADD COLUMN owedBy TEXT NOT NULL DEFAULT 'me'");
   }
 }
 

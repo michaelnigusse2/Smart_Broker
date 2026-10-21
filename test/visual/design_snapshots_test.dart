@@ -11,6 +11,7 @@ import 'package:smart_broker/core/repositories/note_repository.dart';
 import 'package:smart_broker/core/repositories/todo_repository.dart';
 import 'package:smart_broker/core/services/profile_service.dart';
 import 'package:smart_broker/core/theme/app_theme.dart';
+import 'package:smart_broker/features/contacts/screens/contacts_screen.dart';
 import 'package:smart_broker/features/onboarding/screens/onboarding_screen.dart';
 import 'package:smart_broker/features/today/screens/today_screen.dart';
 import 'package:smart_broker/models/note.dart';
@@ -154,6 +155,37 @@ Future<void> _seedBoardDay() async {
   }
 }
 
+/// The people on the People board, with when you last talked and what's owed.
+Future<void> _seedBoardPeople() async {
+  final now = _tenPast10();
+  var number = 100;
+  Future<String> person(String id, String name, String company, Duration ago) async => (await insertContact(
+    id: id,
+    name: name,
+    phone: '+251 911 000 ${number++}',
+    company: company,
+    lastInteraction: now.subtract(ago),
+  )).id;
+  await person('c-abebe', 'Abebe Kebede', 'Ethio Telecom', const Duration(days: 7));
+  final dawit = await person('c-dawit', 'Dawit Alemu', 'Supplier', const Duration(hours: 1));
+  final hanna = await person('c-hanna', 'Hanna Girma', 'Lawyer', const Duration(days: 2));
+  await person('c-meron', 'Meron Haile', 'Investor', const Duration(days: 14));
+  final selam = await person('c-selam', 'Selam Tesfaye', 'Dashen Bank', const Duration(days: 1));
+  await person('c-yonas', 'Yonas Bekele', 'Board', const Duration(days: 3));
+  final lidet = await person('c-lidet', 'ልደት መኮንን', '', const Duration(days: 20));
+  final todos = TodoRepository();
+  for (final (contactId, due) in [
+    (hanna, DateTime(2026, 10, 19)),
+    (selam, DateTime(2026, 10, 21, 17)),
+    (dawit, DateTime(2026, 10, 23)),
+    (lidet, DateTime(2026, 10, 26)),
+  ]) {
+    await todos.insert(
+      TodoItem(id: '', contactId: contactId, title: 'Promise', createdAt: DateTime(2026, 10, 15), dueAt: due),
+    );
+  }
+}
+
 void main() {
   setUpAll(_loadFonts);
   setUp(() async {
@@ -167,6 +199,12 @@ void main() {
     await tester.runAsync(() => ProfileService().setName('Michael'));
     await _pump(tester, TodayScreen(clock: _tenPast10));
     await _snap(tester, 'today');
+  });
+
+  testWidgets('People, as on the board', (tester) async {
+    await tester.runAsync(_seedBoardPeople);
+    await _pump(tester, ContactsScreen(clock: _tenPast10));
+    await _snap(tester, 'people');
   });
 
   testWidgets('Onboarding steps, as on the boards', (tester) async {

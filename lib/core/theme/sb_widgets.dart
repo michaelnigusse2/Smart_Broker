@@ -78,14 +78,17 @@ class SbFace extends StatelessWidget {
 /// The red "late" dot at a face's top-right: 11 dp on a 40 dp face, with a
 /// 2 dp ring of the surface around it.
 class SbLateDot extends StatelessWidget {
-  const SbLateDot({super.key, this.faceSize = 40, this.ring});
+  const SbLateDot({super.key, this.faceSize = 40, this.size, this.ring});
 
   final double faceSize;
+
+  /// The dot's own size, when it isn't in step with the face (People: 12 on 52).
+  final double? size;
   final Color? ring;
 
   @override
   Widget build(BuildContext context) {
-    final dot = faceSize * 0.275;
+    final dot = size ?? faceSize * 0.275;
     return Container(
       width: dot,
       height: dot,

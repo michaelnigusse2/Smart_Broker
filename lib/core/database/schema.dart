@@ -7,7 +7,7 @@
 library;
 
 /// Bump together with a new `Migration` in `migrations.dart`.
-const int schemaVersion = 2;
+const int schemaVersion = 3;
 
 const List<String> createTables = [
   '''
@@ -42,6 +42,7 @@ const List<String> createTables = [
     createdAt INTEGER NOT NULL,
     completedAt INTEGER,
     dueAt INTEGER,
+    owedBy TEXT NOT NULL DEFAULT 'me',
     FOREIGN KEY (contactId) REFERENCES contacts(id) ON DELETE CASCADE,
     FOREIGN KEY (noteId) REFERENCES notes(id) ON DELETE SET NULL
   )''',
