@@ -115,6 +115,25 @@ class CallDetectionPlugin : FlutterPlugin, MethodChannel.MethodCallHandler,
                 result.success(granted)
             }
 
+            // Opens the phone's dialer with the number filled in; the person
+            // presses call themselves, so no CALL_PHONE permission is needed.
+            "dial" -> {
+                val number = call.argument<String>("number").orEmpty()
+                val ctx: Context? = activity ?: context
+                if (ctx == null || number.isBlank()) {
+                    result.success(false)
+                    return
+                }
+                val intent = Intent(Intent.ACTION_DIAL, android.net.Uri.fromParts("tel", number, null))
+                if (activity == null) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                try {
+                    ctx.startActivity(intent)
+                    result.success(true)
+                } catch (e: Exception) {
+                    result.success(false)
+                }
+            }
+
             else -> result.notImplemented()
         }
     }

@@ -34,7 +34,6 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
-  google_fonts: ^8.1.0
   intl: ^0.20.2
   lucide_icons: ^0.257.0
   table_calendar: ^3.2.0
@@ -79,6 +78,38 @@ flutter:
 
   assets:
     - assets/licenses/
+
+  # Espresso type: Bricolage Grotesque for headlines, Inter for text, Menbere
+  # and Noto Sans Ethiopic for Amharic. Static, trimmed instances (SIL OFL).
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter-400.ttf
+          weight: 400
+        - asset: assets/fonts/Inter-500.ttf
+          weight: 500
+        - asset: assets/fonts/Inter-600.ttf
+          weight: 600
+        - asset: assets/fonts/Inter-700.ttf
+          weight: 700
+    - family: Bricolage
+      fonts:
+        - asset: assets/fonts/BricolageGrotesque-700.ttf
+          weight: 700
+        - asset: assets/fonts/BricolageGrotesque-800.ttf
+          weight: 800
+    - family: Menbere
+      fonts:
+        - asset: assets/fonts/Menbere-700.ttf
+          weight: 700
+    - family: NotoEthiopic
+      fonts:
+        - asset: assets/fonts/NotoSansEthiopic-400.ttf
+          weight: 400
+        - asset: assets/fonts/NotoSansEthiopic-600.ttf
+          weight: 600
+        - asset: assets/fonts/NotoSansEthiopic-700.ttf
+          weight: 700
 
   # To add assets to your application, add an assets section, like this:
   # assets:

@@ -161,7 +161,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Contacts'),
+        title: const Text('People'),
         actions: [
           IconButton(
             icon: const Icon(LucideIcons.userPlus),

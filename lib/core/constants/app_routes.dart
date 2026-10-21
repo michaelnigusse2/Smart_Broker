@@ -14,4 +14,8 @@ class AppRoutes {
   static const String phoneContactDetail = '/phone_contact_detail';
   static const String reminderDetail = '/reminder-detail';
   static const String settings = '/settings';
+  static const String calendar = '/calendar';
+
+  /// No leading slash: as the first route it's pushed alone, not on top of '/'.
+  static const String onboarding = 'onboarding';
 }

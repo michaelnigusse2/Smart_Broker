@@ -13,9 +13,11 @@ import 'core/services/call_detection_service.dart';
 import 'core/services/call_matching_service.dart';
 import 'core/services/call_overlay_state.dart';
 import 'core/services/notification_service.dart';
+import 'core/services/profile_service.dart';
 import 'core/services/settings_service.dart';
 import 'core/theme/app_theme.dart';
 import 'core/transcription/licences.dart';
+import 'features/calendar/screens/calendar_screen.dart';
 import 'features/calendar/screens/reminder_detail_screen.dart';
 import 'features/calls/screens/call_overlay_screen.dart';
 import 'features/contacts/screens/contact_detail_screen.dart';
@@ -27,6 +29,7 @@ import 'features/notes/screens/add_note_screen.dart';
 import 'features/notes/screens/ai_review_screen.dart';
 import 'features/notes/screens/note_detail_screen.dart';
 import 'features/notes/screens/notes_list_screen.dart';
+import 'features/onboarding/screens/onboarding_screen.dart';
 import 'features/settings/screens/settings_screen.dart';
 import 'features/todos/screens/tasks_screen.dart';
 
@@ -55,7 +58,14 @@ Future<void> _startApp() async {
     runApp(StartupErrorApp(error: failure, onRetry: _startApp));
     return;
   }
-  runApp(const SmartBrokerApp());
+  var onboarded = true;
+  try {
+    await ProfileService().load();
+    onboarded = await ProfileService().isOnboarded();
+  } catch (e, st) {
+    AppLog.e('Startup', 'could not read the profile', e, st);
+  }
+  runApp(SmartBrokerApp(showOnboarding: !onboarded));
 }
 
 /// Returns the error if a fatal step failed; non-fatal steps are logged and
@@ -70,6 +80,7 @@ Future<Object?> _initialise() async {
   await _nonFatal('notifications', () => NotificationService().init());
   await _nonFatal('reminder rescheduling', () => NotificationService().rescheduleAll());
   registerDictationLicences();
+  registerFontLicences();
   _listenToOverlayOnce();
   await _restoreCallDetection();
   return null;
@@ -146,7 +157,10 @@ Future<void> openPendingAiReview() async {
 }
 
 class SmartBrokerApp extends StatefulWidget {
-  const SmartBrokerApp({super.key});
+  const SmartBrokerApp({super.key, this.showOnboarding = false});
+
+  /// First launch: start with onboarding instead of Today.
+  final bool showOnboarding;
 
   @override
   State<SmartBrokerApp> createState() => _SmartBrokerAppState();
@@ -178,7 +192,7 @@ class _SmartBrokerAppState extends State<SmartBrokerApp> with WidgetsBindingObse
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       navigatorKey: AppRoutes.globalNavigatorKey,
-      initialRoute: AppRoutes.shell,
+      initialRoute: widget.showOnboarding ? AppRoutes.onboarding : AppRoutes.shell,
       routes: {
         AppRoutes.shell: (context) => const MainShell(),
         AppRoutes.contactDetail: (context) => const ContactDetailScreen(),
@@ -191,6 +205,8 @@ class _SmartBrokerAppState extends State<SmartBrokerApp> with WidgetsBindingObse
         AppRoutes.aiReview: (context) => const AiReviewScreen(),
         AppRoutes.reminderDetail: (context) => const ReminderDetailScreen(),
         AppRoutes.settings: (context) => const SettingsScreen(),
+        AppRoutes.calendar: (context) => const CalendarScreen(),
+        AppRoutes.onboarding: (context) => const OnboardingScreen(),
       },
     );
   }

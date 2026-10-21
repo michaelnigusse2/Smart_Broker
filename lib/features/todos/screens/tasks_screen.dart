@@ -165,26 +165,25 @@ class _TasksScreenState extends State<TasksScreen> {
           ),
         ],
       ),
-      floatingActionButton: _isBulkMode
-          ? null
-          : FloatingActionButton(
-              onPressed: _showAddTaskSheet,
-              backgroundColor: AppColors.primary,
-              child: const Icon(LucideIcons.plus, color: Colors.white),
-            ),
     );
   }
 
   PreferredSizeWidget _buildNormalAppBar() {
     return AppBar(
-      title: const Text('Tasks'),
-      backgroundColor: Colors.white,
-      foregroundColor: AppColors.textPrimary,
-      elevation: 0,
-      bottom: PreferredSize(
-        preferredSize: const Size.fromHeight(1),
-        child: Container(color: AppColors.border, height: 1),
-      ),
+      title: const Text('Promises'),
+      // The add button lives in the bar: the bottom corner belongs to the
+      // shell's capture button.
+      actions: [
+        Padding(
+          padding: const EdgeInsets.only(right: AppSpacing.md),
+          child: IconButton.filled(
+            onPressed: _showAddTaskSheet,
+            tooltip: 'Add a promise',
+            // The bar's own icon colour would otherwise win over the button's.
+            icon: const Icon(LucideIcons.plus, color: Colors.white),
+          ),
+        ),
+      ],
     );
   }
 
