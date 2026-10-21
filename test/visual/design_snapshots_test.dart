@@ -11,6 +11,7 @@ import 'package:smart_broker/core/repositories/note_repository.dart';
 import 'package:smart_broker/core/repositories/todo_repository.dart';
 import 'package:smart_broker/core/services/profile_service.dart';
 import 'package:smart_broker/core/theme/app_theme.dart';
+import 'package:smart_broker/features/contacts/screens/contact_detail_screen.dart';
 import 'package:smart_broker/features/contacts/screens/contacts_screen.dart';
 import 'package:smart_broker/features/onboarding/screens/onboarding_screen.dart';
 import 'package:smart_broker/features/today/screens/today_screen.dart';
@@ -51,7 +52,7 @@ Future<void> _snap(WidgetTester tester, String name) async {
   });
 }
 
-Future<void> _pump(WidgetTester tester, Widget screen) async {
+Future<void> _pump(WidgetTester tester, Widget screen, {Object? arguments}) async {
   tester.view.physicalSize = _board * 2;
   tester.view.devicePixelRatio = 2;
   addTearDown(tester.view.reset);
@@ -65,7 +66,11 @@ Future<void> _pump(WidgetTester tester, Widget screen) async {
           // The boards show 24-hour times.
           builder: (context, child) =>
               MediaQuery(data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true), child: child!),
-          home: screen,
+          // Route arguments reach screens such as the Person page as in the app.
+          onGenerateRoute: (_) => MaterialPageRoute<void>(
+            settings: RouteSettings(arguments: arguments),
+            builder: (_) => screen,
+          ),
         ),
       ),
     );
@@ -186,6 +191,46 @@ Future<void> _seedBoardPeople() async {
   }
 }
 
+/// Selam as on the Person board: a promise each way and three talks.
+Future<String> _seedBoardPerson() async {
+  final selam = await insertContact(
+    id: 'c-selam',
+    name: 'Selam Tesfaye',
+    phone: '+251 911 000 001',
+    company: 'Dashen Bank',
+  );
+  final todos = TodoRepository();
+  await todos.insert(
+    TodoItem(
+      id: '',
+      contactId: selam.id,
+      title: '3-year numbers',
+      createdAt: DateTime(2026, 10, 20),
+      dueAt: DateTime(2026, 10, 23, 23, 59),
+    ),
+  );
+  await todos.insert(
+    TodoItem(
+      id: '',
+      contactId: selam.id,
+      title: 'Signed offer',
+      createdAt: DateTime(2026, 10, 20),
+      dueAt: DateTime(2026, 10, 26, 23, 59),
+      owedBy: OwedBy.them,
+    ),
+  );
+  for (final (summary, at) in [
+    ('Wants 3-year term', DateTime(2026, 10, 20, 15)),
+    ('Asked for 5% off', DateTime(2026, 10, 12, 11)),
+    ('First meeting', DateTime(2026, 10, 3, 9)),
+  ]) {
+    await NoteRepository().insert(
+      Note(id: '', contactId: selam.id, rawText: summary, aiSummary: summary, createdAt: at),
+    );
+  }
+  return selam.id;
+}
+
 void main() {
   setUpAll(_loadFonts);
   setUp(() async {
@@ -205,6 +250,12 @@ void main() {
     await tester.runAsync(_seedBoardPeople);
     await _pump(tester, ContactsScreen(clock: _tenPast10));
     await _snap(tester, 'people');
+  });
+
+  testWidgets('Person, as on the board', (tester) async {
+    final id = await tester.runAsync(_seedBoardPerson);
+    await _pump(tester, ContactDetailScreen(clock: _tenPast10), arguments: id);
+    await _snap(tester, 'person');
   });
 
   testWidgets('Onboarding steps, as on the boards', (tester) async {

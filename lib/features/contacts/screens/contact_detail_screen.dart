@@ -1,62 +1,72 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:lucide_icons/lucide_icons.dart';
-import '../../../core/theme/app_theme.dart';
+
 import '../../../core/constants/app_routes.dart';
-import '../../../core/widgets/constrained_layout.dart';
-import '../../../core/widgets/todo_tile.dart';
-import '../../../core/widgets/reminder_card.dart';
-import '../../../core/widgets/info_chip.dart';
-import '../../../core/widgets/text_prompt.dart';
+import '../../../core/repositories/call_repository.dart';
 import '../../../core/repositories/contact_repository.dart';
 import '../../../core/repositories/note_repository.dart';
-import '../../../core/repositories/todo_repository.dart';
 import '../../../core/repositories/reminder_repository.dart';
-import '../../../core/repositories/call_repository.dart';
+import '../../../core/repositories/todo_repository.dart';
+import '../../../core/services/app_log.dart';
 import '../../../core/services/call_matching_service.dart';
 import '../../../core/services/notification_service.dart';
 import '../../../core/services/overlay_draft_service.dart';
-import '../../../core/utils/reminder_time.dart';
+import '../../../core/services/phone_dialer.dart';
+import '../../../core/theme/app_theme.dart';
+import '../../../core/theme/sb_widgets.dart';
+import '../../../core/utils/day_labels.dart';
+import '../../../core/widgets/constrained_layout.dart';
+import '../../../models/call_entry.dart';
 import '../../../models/contact.dart';
 import '../../../models/note.dart';
-import '../../../models/todo_item.dart';
 import '../../../models/reminder.dart';
-import '../../../models/call_entry.dart';
+import '../../../models/todo_item.dart';
+import '../../home/screens/main_shell.dart';
+import '../../todos/widgets/promise_sheet.dart';
 
+/// A person, built to the "Espresso · final" Person board: who they are,
+/// Call / Text / Note, the promises between you, and your last talks.
+/// Editing, call history and deleting live behind "More".
 class ContactDetailScreen extends StatefulWidget {
-  const ContactDetailScreen({super.key});
+  const ContactDetailScreen({super.key, this.clock});
+
+  /// Fixed "now" for tests.
+  final DateTime Function()? clock;
 
   @override
   State<ContactDetailScreen> createState() => _ContactDetailScreenState();
 }
 
 class _ContactDetailScreenState extends State<ContactDetailScreen> {
-  final ContactRepository _contactRepo = ContactRepository();
-  final NoteRepository _noteRepo = NoteRepository();
-  final TodoRepository _todoRepo = TodoRepository();
-  final ReminderRepository _reminderRepo = ReminderRepository();
-  final CallRepository _callRepo = CallRepository();
+  final _contactRepo = ContactRepository();
+  final _noteRepo = NoteRepository();
+  final _todoRepo = TodoRepository();
+  final _reminderRepo = ReminderRepository();
+  final _callRepo = CallRepository();
 
   String? _contactId;
   Contact? _contact;
   List<Note> _notes = [];
-  List<TodoItem> _todos = [];
+  List<TodoItem> _promises = [];
   List<Reminder> _reminders = [];
   List<CallEntry> _calls = [];
-  bool _isLoading = true;
+  bool _loading = true;
   String? _error;
+  bool _allTalks = false;
 
   bool _initialized = false;
   StreamSubscription<CallEntry>? _callLogSubscription;
+
+  DateTime get _now => widget.clock?.call() ?? DateTime.now();
 
   @override
   void initState() {
     super.initState();
     _callLogSubscription = CallMatchingService().onCallLogged.listen((call) {
-      if (call.contactId == _contactId) {
-        _loadData();
-      }
+      if (call.contactId == _contactId) _load();
     });
   }
 
@@ -69,738 +79,899 @@ class _ContactDetailScreenState extends State<ContactDetailScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_initialized) {
-      final args = ModalRoute.of(context)?.settings.arguments;
-      if (args is String) {
-        _contactId = args;
-        _initialized = true;
-        _loadData();
-      } else {
-        setState(() {
-          _error = 'No contact ID provided.';
-          _isLoading = false;
-        });
-        _initialized = true;
-      }
+    if (_initialized) return;
+    _initialized = true;
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is String) {
+      _contactId = args;
+      _load();
+    } else {
+      setState(() {
+        _error = 'No contact was given.';
+        _loading = false;
+      });
     }
   }
 
-  Future<void> _loadData() async {
-    if (_contactId == null) return;
+  Future<void> _load() async {
+    final id = _contactId;
+    if (id == null) return;
     try {
-      final contact = await _contactRepo.getById(_contactId!);
-      if (contact == null) {
-        throw Exception('Contact not found');
-      }
-      final notes = await _noteRepo.getByContactId(_contactId!);
-      final todos = await _todoRepo.getByContactId(_contactId!);
-      final reminders = await _reminderRepo.getByContactId(_contactId!);
-      final calls = await _callRepo.getByContactId(_contactId!);
-
+      final contact = await _contactRepo.getById(id);
+      if (contact == null) throw StateError('This person is no longer saved.');
+      final notes = await _noteRepo.getByContactId(id);
+      final todos = await _todoRepo.getByContactId(id);
+      final reminders = await _reminderRepo.getByContactId(id);
+      final calls = await _callRepo.getByContactId(id);
+      if (!mounted) return;
+      setState(() {
+        _contact = contact;
+        _notes = notes;
+        _promises = todos.where((t) => !t.isCompleted).toList()..sort(_byWhoThenDue);
+        _reminders = reminders;
+        _calls = calls;
+        _loading = false;
+        _error = null;
+      });
+    } catch (e, st) {
+      AppLog.e('Person', 'could not load the person', e, st);
       if (mounted) {
         setState(() {
-          _contact = contact;
-          _notes = notes;
-          _todos = todos;
-          _reminders = reminders;
-          _calls = calls;
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = e.toString();
-          _isLoading = false;
+          _error = e is StateError ? e.message : "Couldn't load this person.";
+          _loading = false;
         });
       }
     }
   }
 
-  Future<void> _editContact() async {
-    await Navigator.pushNamed(context, AppRoutes.contactForm, arguments: _contact);
-    if (mounted) _loadData();
+  /// What you owe first, then what they owe; soonest due first in each.
+  static int _byWhoThenDue(TodoItem a, TodoItem b) {
+    if (a.owedBy != b.owedBy) return a.owedBy == OwedBy.me ? -1 : 1;
+    return (a.dueAt ?? DateTime(9999)).compareTo(b.dueAt ?? DateTime(9999));
   }
 
-  /// Deletes the contact with everything linked to it, after a confirmation
-  /// that says what will be lost.
-  Future<void> _deleteContact() async {
-    final contact = _contact;
-    if (contact == null) return;
-    String count(int n, String word) => '$n $word${n == 1 ? '' : 's'}';
-    final confirmed = await showDialog<bool>(
+  void _snack(String message, {SnackBarAction? action}) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.clearSnackBars();
+    messenger.showSnackBar(SnackBar(content: Text(message), action: action));
+  }
+
+  Future<void> _call() async {
+    final opened = await PhoneDialer.dial(_contact!.phoneNumber);
+    if (!opened && mounted) _snack("Couldn't open the phone's dialer");
+  }
+
+  Future<void> _text() async {
+    final opened = await PhoneDialer.text(_contact!.phoneNumber);
+    if (!opened && mounted) _snack("Couldn't open messages");
+  }
+
+  Future<void> _note() async {
+    await Navigator.pushNamed(context, AppRoutes.addNote, arguments: _contact!.id);
+    if (mounted) _load();
+  }
+
+  Future<void> _openNote(Note note) async {
+    await Navigator.pushNamed(context, AppRoutes.noteDetail, arguments: note.id);
+    if (mounted) _load();
+  }
+
+  void _allPromises() {
+    Navigator.of(context).popUntil((route) => route.isFirst);
+    MainShell.currentTab.value = MainShell.promisesTab;
+  }
+
+  // ── Promises ───────────────────────────────────────────────────
+
+  Future<void> _addPromise() async {
+    final promise = await showPromiseSheet(context, contact: _contact);
+    if (promise == null) return;
+    await _todoRepo.insert(promise);
+    _load();
+  }
+
+  Future<void> _promiseActions(TodoItem promise) async {
+    final action = await _showActions(context, promise.title, [
+      (id: 'done', icon: LucideIcons.check, label: 'Done', danger: false),
+      (id: 'edit', icon: LucideIcons.pencil, label: 'Change', danger: false),
+      (id: 'delete', icon: LucideIcons.trash2, label: 'Delete', danger: true),
+    ]);
+    if (!mounted || action == null) return;
+    switch (action) {
+      case 'done':
+        await _todoRepo.toggleCompleted(promise.id);
+        _load();
+        _snack(
+          'Marked done',
+          action: SnackBarAction(
+            label: 'Undo',
+            onPressed: () async {
+              await _todoRepo.toggleCompleted(promise.id);
+              _load();
+            },
+          ),
+        );
+      case 'edit':
+        final changed = await showPromiseSheet(context, contact: _contact, editing: promise);
+        if (changed == null) return;
+        await _todoRepo.update(changed);
+        _load();
+      case 'delete':
+        await _todoRepo.delete(promise.id);
+        _load();
+        _snack(
+          'Promise deleted',
+          action: SnackBarAction(
+            label: 'Undo',
+            onPressed: () async {
+              await _todoRepo.insert(promise);
+              _load();
+            },
+          ),
+        );
+    }
+  }
+
+  // ── Talks ──────────────────────────────────────────────────────
+
+  Future<void> _talkActions(Note note) async {
+    final action = await _showActions(context, _talkLine(note), [
+      (id: 'open', icon: LucideIcons.fileText, label: 'Open', danger: false),
+      (id: 'delete', icon: LucideIcons.trash2, label: 'Delete', danger: true),
+    ]);
+    if (!mounted || action == null) return;
+    if (action == 'open') return _openNote(note);
+    final confirmed = await _confirm(
+      title: 'Delete this note?',
+      body: 'Promises and reminders made from it stay.',
+      action: 'Delete',
+    );
+    if (confirmed != true) return;
+    await _noteRepo.delete(note.id);
+    _load();
+  }
+
+  // ── More ───────────────────────────────────────────────────────
+
+  Future<void> _more() async {
+    final contact = _contact!;
+    final action = await _showActions(context, contact.name, [
+      (id: 'promise', icon: LucideIcons.arrowLeftRight, label: 'Add a promise', danger: false),
+      (id: 'edit', icon: LucideIcons.pencil, label: 'Edit details', danger: false),
+      (id: 'calls', icon: LucideIcons.history, label: 'Call history', danger: false),
+      (id: 'delete', icon: LucideIcons.trash2, label: 'Delete', danger: true),
+    ]);
+    if (!mounted || action == null) return;
+    switch (action) {
+      case 'promise':
+        await _addPromise();
+      case 'edit':
+        await Navigator.pushNamed(context, AppRoutes.contactForm, arguments: contact);
+        if (mounted) _load();
+      case 'calls':
+        await _showCallHistory();
+      case 'delete':
+        await _delete();
+    }
+  }
+
+  Future<void> _showCallHistory() {
+    return showModalBottomSheet<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Delete ${contact.name}?'),
-        content: Text(
-          'This also deletes ${count(_notes.length, 'note')}, ${count(_todos.length, 'task')}, '
+      useSafeArea: true,
+      isScrollControlled: true,
+      backgroundColor: context.sb.canvas,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl))),
+      builder: (_) => _CallHistorySheet(calls: _calls),
+    );
+  }
+
+  /// Deletes the person with everything linked to them, after a confirmation
+  /// that says what will be lost.
+  Future<void> _delete() async {
+    final contact = _contact!;
+    String count(int n, String word) => '$n $word${n == 1 ? '' : 's'}';
+    final allTodos = await _todoRepo.getByContactId(contact.id);
+    if (!mounted) return;
+    final confirmed = await _confirm(
+      title: 'Delete ${contact.name}?',
+      body:
+          'This also deletes ${count(_notes.length, 'note')}, ${count(allTodos.length, 'promise')}, '
           '${count(_reminders.length, 'reminder')} and ${count(_calls.length, 'logged call')}. '
           'This cannot be undone.',
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete', style: TextStyle(color: AppColors.error)),
-          ),
-        ],
-      ),
+      action: 'Delete',
     );
     if (confirmed != true || !mounted) return;
     try {
-      // Reminders are deleted with the contact, so their alarms must go too.
+      // Reminders are deleted with the person, so their alarms must go too.
       for (final reminder in _reminders) {
         await NotificationService().cancelReminder(reminder.id);
       }
       await _contactRepo.delete(contact.id);
       await OverlayDraftService().clearDraft(contact.id);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${contact.name} deleted')));
+      _snack('${contact.name} deleted');
       Navigator.pop(context);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not delete: $e')));
-      }
+    } catch (e, st) {
+      AppLog.e('Person', 'could not delete', e, st);
+      if (mounted) _snack("Couldn't delete ${contact.name}");
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    if (_error != null || _contact == null) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Error')),
-        body: Center(child: Text(_error ?? 'Unknown error')),
-      );
-    }
-
-    final contact = _contact!;
-    final theme = Theme.of(context);
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Contact Details'),
+  Future<bool?> _confirm({required String title, required String body, required String action}) {
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Text(body),
         actions: [
-          PopupMenuButton<String>(
-            icon: const Icon(LucideIcons.moreHorizontal),
-            tooltip: 'More',
-            onSelected: (value) => value == 'edit' ? _editContact() : _deleteContact(),
-            itemBuilder: (context) => const [
-              PopupMenuItem(value: 'edit', child: Text('Edit contact')),
-              PopupMenuItem(
-                value: 'delete',
-                child: Text('Delete contact', style: TextStyle(color: AppColors.error)),
-              ),
-            ],
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(action, style: TextStyle(color: ctx.sb.late)),
           ),
-          const SizedBox(width: AppSpacing.sm),
         ],
-      ),
-      body: ConstrainedLayout(
-        child: Column(
-          children: [
-            // Minimal Header (Pinned to top)
-            Padding(
-              padding: const EdgeInsets.all(AppSpacing.xl),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    backgroundColor: AppColors.surfaceElevated,
-                    foregroundColor: AppColors.textPrimary,
-                    radius: 36,
-                    child: Text(
-                      contact.initials,
-                      style: theme.textTheme.headlineMedium?.copyWith(fontSize: 24),
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.lg),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          contact.name,
-                          style: theme.textTheme.headlineMedium,
-                        ),
-                        const SizedBox(height: AppSpacing.xs),
-                        Row(
-                          children: [
-                            Icon(LucideIcons.phone, size: 14, color: AppColors.textSecondary),
-                            const SizedBox(width: AppSpacing.xs),
-                            Flexible(
-                              child: Text(
-                                contact.phoneNumber.trim(),
-                                overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Last seen ${_formatDate(contact.lastInteraction)}',
-                          style: theme.textTheme.labelSmall,
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const Divider(height: 1),
-
-            // Scrollable Content
-            Expanded(
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Collapsible Sections
-                    _CollapsibleSection(
-                      title: 'Notes',
-                      icon: LucideIcons.fileText,
-                      isExpanded: true,
-                      child: _NotesList(
-                        notes: _notes,
-                        onTap: (noteId) {
-                          Navigator.pushNamed(
-                            context,
-                            AppRoutes.noteDetail,
-                            arguments: noteId,
-                          ).then((_) => _loadData());
-                        },
-                        onDelete: (noteId) async {
-                          await _noteRepo.delete(noteId);
-                          _loadData();
-                        },
-                      ),
-                    ),
-                    const Divider(height: 1),
-                    _CollapsibleSection(
-                      title: 'Tasks',
-                      icon: LucideIcons.checkSquare,
-                      isExpanded: true,
-                      child: _TodosList(
-                        contactId: contact.id,
-                        todos: _todos,
-                        onToggle: (id) async {
-                          await _todoRepo.toggleCompleted(id);
-                          _loadData();
-                        },
-                        onEdit: (todo, newTitle) async {
-                          await _todoRepo.update(todo.copyWith(title: newTitle));
-                          _loadData();
-                        },
-                        onDelete: (todo) async {
-                          await _todoRepo.delete(todo.id);
-                          _loadData();
-                          if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).clearSnackBars();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: const Text('Task deleted'),
-                              duration: const Duration(seconds: 5),
-                              action: SnackBarAction(
-                                label: 'Undo',
-                                onPressed: () async {
-                                  await _todoRepo.insert(todo);
-                                  _loadData();
-                                },
-                              ),
-                            ),
-                          );
-                        },
-                        onAdd: (title) async {
-                          final todo = TodoItem(
-                            id: '',
-                            contactId: contact.id,
-                            title: title,
-                            isCompleted: false,
-                            createdAt: DateTime.now(),
-                          );
-                          await _todoRepo.insert(todo);
-                          _loadData();
-                        },
-                      ),
-                    ),
-                    const Divider(height: 1),
-                    _CollapsibleSection(
-                      title: 'Call History',
-                      icon: LucideIcons.phoneCall,
-                      isExpanded: false,
-                      child: _CallsList(calls: _calls),
-                    ),
-                    const Divider(height: 1),
-                    _CollapsibleSection(
-                      title: 'Reminders',
-                      icon: LucideIcons.bell,
-                      isExpanded: false,
-                      child: _RemindersList(reminders: _reminders, onChanged: _loadData),
-                    ),
-                    const SizedBox(height: AppSpacing.xxxl * 2), // FAB spacing
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          Navigator.pushNamed(
-            context,
-            AppRoutes.addNote,
-            arguments: contact.id,
-          ).then((_) => _loadData());
-        },
-        backgroundColor: AppColors.textPrimary,
-        foregroundColor: Colors.white,
-        elevation: 2,
-        icon: const Icon(LucideIcons.plus),
-        label: const Text('Add Note', style: TextStyle(fontWeight: FontWeight.w500)),
       ),
     );
   }
 
-  String _formatDate(DateTime date) {
-    final now = DateTime.now();
-    final difference = now.difference(date);
-    if (isSameCalendarDay(date, now)) return 'Today at ${DateFormat.jm().format(date)}';
-    if (difference.inDays < 7) return DateFormat.EEEE().format(date);
-    return DateFormat.yMMMd().format(date);
-  }
-}
-
-class _CollapsibleSection extends StatefulWidget {
-  final String title;
-  final IconData icon;
-  final Widget child;
-  final bool isExpanded;
-
-  const _CollapsibleSection({
-    required this.title,
-    required this.icon,
-    required this.child,
-    this.isExpanded = false,
-  });
-
-  @override
-  State<_CollapsibleSection> createState() => _CollapsibleSectionState();
-}
-
-class _CollapsibleSectionState extends State<_CollapsibleSection> {
-  late bool _expanded;
-
-  @override
-  void initState() {
-    super.initState();
-    _expanded = widget.isExpanded;
-  }
+  // ── Build ──────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      children: [
-        InkWell(
-          onTap: () {
-            setState(() {
-              _expanded = !_expanded;
-            });
-          },
+    if (_loading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    final contact = _contact;
+    if (_error != null || contact == null) {
+      return Scaffold(
+        appBar: AppBar(),
+        body: Center(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.lg),
-            child: Row(
+            padding: const EdgeInsets.all(24),
+            child: Text(_error ?? "Couldn't load this person.", textAlign: TextAlign.center),
+          ),
+        ),
+      );
+    }
+
+    final now = _now;
+    final talks = _allTalks ? _notes : _notes.take(3).toList();
+    final detail = [contact.company, contact.role, contact.phoneNumber]
+        .map((s) => s.trim())
+        .firstWhere(
+          (s) => s.isNotEmpty,
+          orElse: () => '',
+        );
+    final canCall = contact.phoneNumber.trim().isNotEmpty;
+
+    return Scaffold(
+      body: SafeArea(
+        bottom: false,
+        child: ConstrainedLayout(
+          child: RefreshIndicator(
+            color: context.sb.primary,
+            onRefresh: _load,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 40),
               children: [
-                Icon(widget.icon, size: 20, color: AppColors.textSecondary),
-                const SizedBox(width: AppSpacing.md),
-                Expanded(
-                  child: Text(
-                    widget.title,
-                    style: theme.textTheme.titleMedium,
+                Row(
+                  children: [
+                    SbCircleButton(
+                      icon: LucideIcons.chevronLeft,
+                      tooltip: 'Back',
+                      onPressed: () => Navigator.maybePop(context),
+                    ),
+                    const Spacer(),
+                    SbCircleButton(icon: LucideIcons.moreHorizontal, tooltip: 'More', onPressed: _more),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                SbRise(
+                  child: _Header(name: contact.name, detail: detail),
+                ),
+                const SizedBox(height: 18),
+                SbRise(
+                  delay: const Duration(milliseconds: 80),
+                  child: _Actions(
+                    onCall: canCall ? _call : null,
+                    onText: canCall ? _text : null,
+                    onNote: _note,
                   ),
                 ),
-                Icon(
-                  _expanded ? LucideIcons.chevronDown : LucideIcons.chevronRight,
-                  size: 20,
-                  color: AppColors.textTertiary,
+                if (_promises.isNotEmpty) ...[
+                  const SizedBox(height: 22),
+                  SbCap(
+                    'Promises',
+                    trailing: _CapLink(label: 'All', onTap: _allPromises),
+                  ),
+                  SbRise(
+                    delay: const Duration(milliseconds: 160),
+                    child: _Promises(
+                      promises: _promises,
+                      firstName: contact.name.trim().split(RegExp(r'\s+')).first,
+                      now: now,
+                      onTap: _promiseActions,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 22),
+                SbCap(
+                  'Last talks',
+                  trailing: _notes.length > 3
+                      ? _CapLink(
+                          label: _allTalks ? 'Fewer' : 'All ${_notes.length}',
+                          onTap: () => setState(() => _allTalks = !_allTalks),
+                        )
+                      : null,
+                ),
+                SbRise(
+                  delay: const Duration(milliseconds: 240),
+                  child: _Talks(notes: talks, now: now, onTap: _openNote, onLongPress: _talkActions),
                 ),
               ],
             ),
           ),
         ),
-        AnimatedSize(
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeInOut,
-          child: _expanded
-              ? Padding(
-                  padding: const EdgeInsets.only(bottom: AppSpacing.lg),
-                  child: widget.child,
-                )
-              : const SizedBox.shrink(),
+      ),
+    );
+  }
+}
+
+/// The first line worth showing for a note: its summary, else what was said.
+String _talkLine(Note note) {
+  final source = note.aiSummary.trim().isNotEmpty ? note.aiSummary : note.rawText;
+  final line = source
+      .split('\n')
+      .map((l) => l.trim().replaceFirst(RegExp(r'^[-•*]\s*'), ''))
+      .firstWhere((l) => l.isNotEmpty, orElse: () => '');
+  return line.isEmpty ? 'Note' : line;
+}
+
+/// Face 68, name in Bricolage 30/34, company (or role, or number) under it.
+class _Header extends StatelessWidget {
+  const _Header({required this.name, required this.detail});
+
+  final String name;
+  final String detail;
+
+  @override
+  Widget build(BuildContext context) {
+    final sb = context.sb;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Row(
+        children: [
+          SbFace(name: name, size: 68),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Semantics(
+                  header: true,
+                  child: Text(
+                    name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.headlineMedium,
+                  ),
+                ),
+                if (detail.isNotEmpty)
+                  Text(
+                    detail,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 15, height: 22 / 15, color: sb.text2),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Call (espresso, a little wider), Text and Note: 50 dp pills.
+class _Actions extends StatelessWidget {
+  const _Actions({required this.onCall, required this.onText, required this.onNote});
+
+  final VoidCallback? onCall;
+  final VoidCallback? onText;
+  final VoidCallback onNote;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          flex: 13,
+          child: _ActionPill(icon: LucideIcons.phone, label: 'Call', onTap: onCall, filled: true),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          flex: 10,
+          child: _ActionPill(icon: LucideIcons.messageSquare, label: 'Text', onTap: onText),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          flex: 10,
+          child: _ActionPill(icon: LucideIcons.mic, label: 'Note', onTap: onNote),
         ),
       ],
     );
   }
 }
 
-class _NotesList extends StatelessWidget {
-  final List<Note> notes;
-  final Function(String) onTap;
-  final Function(String) onDelete;
+class _ActionPill extends StatelessWidget {
+  const _ActionPill({required this.icon, required this.label, required this.onTap, this.filled = false});
 
-  const _NotesList({
-    required this.notes,
-    required this.onTap,
-    required this.onDelete,
-  });
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+  final bool filled;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final sb = context.sb;
+    final enabled = onTap != null;
+    final fg = filled ? sb.onPrimary : sb.text;
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      label: label,
+      excludeSemantics: true,
+      child: Opacity(
+        opacity: enabled ? 1 : 0.4,
+        child: SbPressable(
+          onTap: onTap,
+          child: Container(
+            height: 50,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: filled ? sb.primary : sb.surface,
+              borderRadius: BorderRadius.circular(99),
+              boxShadow: filled ? null : [BoxShadow(color: sb.shadow, blurRadius: 2, offset: const Offset(0, 1))],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 18, color: fg),
+                SizedBox(width: filled ? 8 : 6),
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 15, height: 20 / 15, fontWeight: FontWeight.w600, color: fg),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
+/// A caramel text link at the end of a section label ("All").
+class _CapLink extends StatelessWidget {
+  const _CapLink({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Text(
+            label,
+            style: TextStyle(fontSize: 13, height: 18 / 13, fontWeight: FontWeight.w700, color: context.sb.accent),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// "You owe" rows (red arrow out) then "Selam owes" rows (green arrow in).
+class _Promises extends StatelessWidget {
+  const _Promises({required this.promises, required this.firstName, required this.now, required this.onTap});
+
+  final List<TodoItem> promises;
+  final String firstName;
+  final DateTime now;
+  final ValueChanged<TodoItem> onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final sb = context.sb;
+    return SbCard(
+      child: Column(
+        children: [
+          for (var i = 0; i < promises.length; i++)
+            _PromiseRow(
+              promise: promises[i],
+              who: promises[i].owedBy == OwedBy.me ? 'You owe' : '$firstName owes',
+              now: now,
+              divider: i > 0 ? sb.fill : null,
+              onTap: () => onTap(promises[i]),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PromiseRow extends StatelessWidget {
+  const _PromiseRow({
+    required this.promise,
+    required this.who,
+    required this.now,
+    required this.divider,
+    required this.onTap,
+  });
+
+  final TodoItem promise;
+  final String who;
+  final DateTime now;
+  final Color? divider;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final sb = context.sb;
+    final mine = promise.owedBy == OwedBy.me;
+    final due = promise.dueAt;
+    final late = due != null && due.isBefore(now);
+    final when = due == null ? '' : (late ? DayLabels.late(due, now) : DayLabels.due(due, now));
+    final Color whenColor;
+    if (late) {
+      whenColor = sb.late;
+    } else {
+      whenColor = mine ? sb.oweFg : sb.text2;
+    }
+    return Semantics(
+      button: true,
+      label: '$who ${promise.title}${when.isEmpty ? '' : ', $when'}',
+      excludeSemantics: true,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          constraints: BoxConstraints(minHeight: divider == null ? 64 : 65),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: divider == null
+              ? null
+              : BoxDecoration(
+                  border: Border(top: BorderSide(color: divider!)),
+                ),
+          child: Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: mine ? sb.oweBg : sb.goodBg,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  mine ? LucideIcons.arrowUpRight : LucideIcons.arrowDownLeft,
+                  size: 17,
+                  color: mine ? sb.oweFg : sb.goodFg,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        who,
+                        style: TextStyle(fontSize: 12, height: 16 / 12, fontWeight: FontWeight.w700, color: sb.text2),
+                      ),
+                      Text(
+                        promise.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 16, height: 22 / 16, fontWeight: FontWeight.w600, color: sb.text),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              if (when.isNotEmpty) ...[
+                const SizedBox(width: 12),
+                Text(
+                  when,
+                  style: TextStyle(
+                    fontSize: 14,
+                    height: 20 / 14,
+                    fontWeight: mine || late ? FontWeight.w700 : FontWeight.w600,
+                    color: whenColor,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// "Yesterday — Wants 3-year term": the date in a 78 dp column, one line each.
+class _Talks extends StatelessWidget {
+  const _Talks({required this.notes, required this.now, required this.onTap, required this.onLongPress});
+
+  final List<Note> notes;
+  final DateTime now;
+  final ValueChanged<Note> onTap;
+  final ValueChanged<Note> onLongPress;
+
+  static String _when(DateTime t, DateTime now) {
+    final days = DayLabels.daysBetween(t, now);
+    if (days == 0) return 'Today';
+    if (days == 1) return 'Yesterday';
+    return DateFormat(t.year == now.year ? 'd MMM' : 'd MMM y').format(t);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final sb = context.sb;
     if (notes.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-        child: Text('No notes yet.', style: theme.textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary)),
+      return SbCard(
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 52),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          alignment: Alignment.centerLeft,
+          child: Text(
+            'No talks yet. Tap Note after a call.',
+            style: TextStyle(fontSize: 15, height: 21 / 15, color: sb.text2),
+          ),
+        ),
       );
     }
-
-    return ListView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: notes.length,
-      itemBuilder: (context, index) {
-        final note = notes[index];
-        return InkWell(
-          onTap: () => onTap(note.id),
-          onLongPress: () {
-            showModalBottomSheet(
-              context: context,
-              builder: (context) => SafeArea(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
+    return SbCard(
+      child: Column(
+        children: [
+          for (var i = 0; i < notes.length; i++)
+            InkWell(
+              onTap: () => onTap(notes[i]),
+              onLongPress: () => onLongPress(notes[i]),
+              child: Container(
+                constraints: BoxConstraints(minHeight: i == 0 ? 52 : 53),
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: i == 0
+                    ? null
+                    : BoxDecoration(
+                        border: Border(top: BorderSide(color: sb.fill)),
+                      ),
+                child: Row(
                   children: [
-                    ListTile(
-                      leading: const Icon(LucideIcons.fileText),
-                      title: const Text('View Details'),
-                      onTap: () {
-                        Navigator.pop(context);
-                        onTap(note.id);
-                      },
+                    SizedBox(
+                      width: 78,
+                      child: Text(
+                        _when(notes[i].createdAt, now),
+                        maxLines: 1,
+                        style: TextStyle(
+                          fontSize: 13,
+                          height: 18 / 13,
+                          fontWeight: FontWeight.w600,
+                          color: sb.text2,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      ),
                     ),
-                    ListTile(
-                      leading: const Icon(LucideIcons.trash2, color: AppColors.error),
-                      title: const Text('Delete Note', style: TextStyle(color: AppColors.error)),
-                      onTap: () {
-                        Navigator.pop(context);
-                        _confirmDelete(context, note.id);
-                      },
+                    Expanded(
+                      child: Text(
+                        _talkLine(notes[i]),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 15, height: 21 / 15, fontWeight: FontWeight.w500, color: sb.text),
+                      ),
                     ),
                   ],
                 ),
               ),
-            );
-          },
-          child: Padding(
-            padding: const EdgeInsets.only(
-              left: AppSpacing.xxl,
-              right: AppSpacing.lg,
-              bottom: AppSpacing.xl,
-              top: AppSpacing.sm,
             ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+        ],
+      ),
+    );
+  }
+}
+
+/// A short list of choices in a sheet, for row taps and "More".
+Future<String?> _showActions(
+  BuildContext context,
+  String title,
+  List<({String id, IconData icon, String label, bool danger})> actions,
+) {
+  final sb = context.sb;
+  return showModalBottomSheet<String>(
+    context: context,
+    useSafeArea: true,
+    backgroundColor: sb.canvas,
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl))),
+    builder: (ctx) => Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Center(
+            child: Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(color: sb.track, borderRadius: BorderRadius.circular(99)),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 16, 4, 10),
+            child: Text(
+              title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(ctx).textTheme.titleMedium,
+            ),
+          ),
+          SbCard(
+            child: Column(
               children: [
-                // Timeline line visual indicator
-                Container(
-                  margin: const EdgeInsets.only(top: 6),
-                  width: 2,
-                  height: 16,
-                  color: AppColors.divider,
-                ),
-                const SizedBox(width: AppSpacing.md),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Date drops under the chip when both don't fit on one line.
-                      Wrap(
-                        spacing: AppSpacing.sm,
-                        runSpacing: AppSpacing.xs,
-                        crossAxisAlignment: WrapCrossAlignment.center,
+                for (var i = 0; i < actions.length; i++)
+                  InkWell(
+                    onTap: () => Navigator.pop(ctx, actions[i].id),
+                    child: Container(
+                      constraints: const BoxConstraints(minHeight: 56),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      decoration: i == 0
+                          ? null
+                          : BoxDecoration(
+                              border: Border(top: BorderSide(color: sb.fill)),
+                            ),
+                      child: Row(
                         children: [
-                          note.aiSummary.isEmpty
-                              ? const InfoChip(label: 'Not processed', color: AppColors.textSecondary)
-                              : const InfoChip(label: 'AI Summary', color: AppColors.primary),
-                          Text(
-                            DateFormat.yMMMd().format(note.createdAt),
-                            style: theme.textTheme.labelSmall,
+                          Icon(actions[i].icon, size: 20, color: actions[i].danger ? sb.late : sb.text),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Text(
+                              actions[i].label,
+                              style: TextStyle(
+                                fontSize: 16,
+                                height: 22 / 16,
+                                fontWeight: FontWeight.w600,
+                                color: actions[i].danger ? sb.late : sb.text,
+                              ),
+                            ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: AppSpacing.sm),
-                      if (note.aiSummary.isEmpty)
-                        // Saved without AI: show the note itself.
-                        Text(
-                          note.rawText,
-                          style: theme.textTheme.bodyMedium,
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
-                        )
-                      else ...[
-                        Text(
-                          note.aiSummary,
-                          style: theme.textTheme.bodyMedium,
-                        ),
-                        const SizedBox(height: AppSpacing.xs),
-                        Text(
-                          '"${note.rawText}"',
-                          style: theme.textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ],
+                    ),
                   ),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                const Icon(LucideIcons.chevronRight, size: 16, color: AppColors.textTertiary),
               ],
             ),
           ),
-        );
-      },
-    );
-  }
-
-  Future<void> _confirmDelete(BuildContext context, String noteId) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Note'),
-        content: const Text(
-          'This will permanently delete this note. Linked todos and reminders will not be deleted but will no longer be associated with this note.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete', style: TextStyle(color: AppColors.error)),
-          ),
         ],
       ),
-    );
-
-    if (confirmed == true) {
-      onDelete(noteId);
-    }
-  }
+    ),
+  );
 }
 
-class _TodosList extends StatefulWidget {
-  final String contactId;
-  final List<TodoItem> todos;
-  final Function(String) onToggle;
-  final Function(TodoItem, String) onEdit;
-  final Function(TodoItem) onDelete;
-  final Function(String) onAdd;
+/// Every logged call with this person, newest first.
+class _CallHistorySheet extends StatelessWidget {
+  const _CallHistorySheet({required this.calls});
 
-  const _TodosList({
-    required this.contactId,
-    required this.todos,
-    required this.onToggle,
-    required this.onEdit,
-    required this.onDelete,
-    required this.onAdd,
-  });
-
-  @override
-  State<_TodosList> createState() => _TodosListState();
-}
-
-class _TodosListState extends State<_TodosList> {
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (widget.todos.isEmpty)
-            Padding(
-              padding: const EdgeInsets.only(bottom: AppSpacing.md),
-              child: Text(
-                'No tasks.',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary),
-              ),
-            )
-          else
-            ...widget.todos.map(
-              (todo) => Dismissible(
-                key: Key(todo.id),
-                direction: DismissDirection.endToStart,
-                background: Container(
-                  alignment: Alignment.centerRight,
-                  padding: const EdgeInsets.only(right: AppSpacing.md),
-                  color: AppColors.error,
-                  child: const Icon(LucideIcons.trash2, color: Colors.white),
-                ),
-                onDismissed: (_) => widget.onDelete(todo),
-                child: TodoTile(
-                  todo: todo,
-                  onChanged: (val) => widget.onToggle(todo.id),
-                  onEdit: (newTitle) => widget.onEdit(todo, newTitle),
-                  onDelete: () => widget.onDelete(todo),
-                ),
-              ),
-            ),
-
-          const SizedBox(height: AppSpacing.sm),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              onPressed: () => _showAddTaskSheet(context),
-              icon: const Icon(LucideIcons.plus, size: 16),
-              label: const Text('Add Task'),
-              style: TextButton.styleFrom(
-                padding: EdgeInsets.zero,
-                foregroundColor: AppColors.primary,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _showAddTaskSheet(BuildContext context) async {
-    final title = await showTextPromptSheet(
-      context,
-      title: 'New Task',
-      hint: 'What needs to be done?',
-      confirmLabel: 'Save Task',
-    );
-    if (title != null && mounted) widget.onAdd(title);
-  }
-}
-
-class _CallsList extends StatelessWidget {
   final List<CallEntry> calls;
 
-  const _CallsList({required this.calls});
+  static String _length(Duration d) {
+    if (d.inMinutes == 0) return '${d.inSeconds}s';
+    final seconds = d.inSeconds % 60;
+    return '${d.inMinutes}:${seconds.toString().padLeft(2, '0')}';
+  }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    if (calls.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-        child: Text('No call history.', style: theme.textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary)),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
-      child: Column(
-        children: calls.map((call) {
-          IconData callIcon;
-          Color callColor;
-          switch (call.type) {
-            case CallType.incoming:
-              callIcon = LucideIcons.phoneIncoming;
-              callColor = AppColors.textSecondary;
-              break;
-            case CallType.outgoing:
-              callIcon = LucideIcons.phoneOutgoing;
-              callColor = AppColors.textPrimary;
-              break;
-            case CallType.missed:
-              callIcon = LucideIcons.phoneMissed;
-              callColor = AppColors.error;
-              break;
-          }
-
-          return Padding(
-            padding: const EdgeInsets.only(bottom: AppSpacing.md),
-            child: Row(
-              children: [
-                Icon(callIcon, color: callColor, size: 16),
-                const SizedBox(width: AppSpacing.md),
-                // Type above date, so neither has to squeeze into one line.
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        call.type.name.capitalize(),
-                        style: theme.textTheme.bodyMedium?.copyWith(color: AppColors.textPrimary),
-                      ),
-                      Text(
-                        DateFormat.yMMMd().add_jm().format(call.timestamp),
-                        style: theme.textTheme.labelSmall,
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.md),
-                Text(
-                  call.duration.inMinutes > 0 ? '${call.duration.inMinutes}m' : '${call.duration.inSeconds}s',
-                  style: theme.textTheme.labelMedium,
-                ),
-              ],
+    final sb = context.sb;
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.6,
+      maxChildSize: 0.95,
+      builder: (ctx, controller) => ListView(
+        controller: controller,
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        children: [
+          Center(
+            child: Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(color: sb.track, borderRadius: BorderRadius.circular(99)),
             ),
-          );
-        }).toList(),
-      ),
-    );
-  }
-}
-
-class _RemindersList extends StatelessWidget {
-  final List<Reminder> reminders;
-  final VoidCallback onChanged;
-
-  const _RemindersList({required this.reminders, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) {
-    if (reminders.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-        child: Text(
-          'No reminders.',
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary),
-        ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-      child: Column(
-        children: reminders
-            .map(
-              (r) => ReminderCard(
-                reminder: r,
-                onTap: () =>
-                    Navigator.pushNamed(context, AppRoutes.reminderDetail, arguments: r.id).then((_) => onChanged()),
-              ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 16, 4, 10),
+            child: Text('Call history', style: Theme.of(ctx).textTheme.titleMedium),
+          ),
+          if (calls.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(4),
+              child: Text('No calls logged yet.', style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(color: sb.text2)),
             )
-            .toList(),
+          else
+            SbCard(
+              child: Column(
+                children: [
+                  for (var i = 0; i < calls.length; i++)
+                    Container(
+                      constraints: const BoxConstraints(minHeight: 56),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: i == 0
+                          ? null
+                          : BoxDecoration(
+                              border: Border(top: BorderSide(color: sb.fill)),
+                            ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            switch (calls[i].type) {
+                              CallType.incoming => LucideIcons.phoneIncoming,
+                              CallType.outgoing => LucideIcons.phoneOutgoing,
+                              CallType.missed => LucideIcons.phoneMissed,
+                            },
+                            size: 18,
+                            color: calls[i].type == CallType.missed ? sb.late : sb.text2,
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  switch (calls[i].type) {
+                                    CallType.incoming => 'Incoming',
+                                    CallType.outgoing => 'Outgoing',
+                                    CallType.missed => 'Missed',
+                                  },
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    height: 20 / 15,
+                                    fontWeight: FontWeight.w600,
+                                    color: calls[i].type == CallType.missed ? sb.late : sb.text,
+                                  ),
+                                ),
+                                Text(
+                                  DateFormat('EEE d MMM · HH:mm').format(calls[i].timestamp),
+                                  style: TextStyle(fontSize: 13, height: 18 / 13, color: sb.text2),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (calls[i].type != CallType.missed)
+                            Text(
+                              _length(calls[i].duration),
+                              style: TextStyle(
+                                fontSize: 13,
+                                height: 18 / 13,
+                                fontWeight: FontWeight.w600,
+                                color: sb.text2,
+                                fontFeatures: const [FontFeature.tabularFigures()],
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+        ],
       ),
     );
   }
-}
-
-extension StringExtension on String {
-  String capitalize() => isEmpty ? this : '${this[0].toUpperCase()}${substring(1)}';
 }

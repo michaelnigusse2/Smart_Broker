@@ -99,12 +99,13 @@ void main() {
     await _pumpScreen(tester, const ContactDetailScreen(), arguments: contactId);
 
     expect(find.text('Alemayehu Gebremedhin Tesfaye'), findsOneWidget);
-    // Open every section so its rows are laid out too.
-    for (final section in ['Notes', 'Call History', 'Reminders']) {
-      await tester.ensureVisible(find.text(section));
-      await tester.tap(find.text(section));
-      await tester.pumpAndSettle();
-    }
+    expect(find.text('You owe'), findsOneWidget);
+    expect(find.textContaining('three-bedroom flat'), findsOneWidget);
+    // Call history lives behind More.
+    await tester.tap(find.byTooltip('More'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Call history'));
+    await tester.pumpAndSettle();
     expect(find.text('Outgoing'), findsOneWidget);
   });
 

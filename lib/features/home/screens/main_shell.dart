@@ -53,6 +53,19 @@ class _MainShellState extends State<MainShell> {
   void initState() {
     super.initState();
     MainShell.currentTab.value = _index;
+    // Screens pushed above the shell switch tabs by setting currentTab.
+    MainShell.currentTab.addListener(_followCurrentTab);
+  }
+
+  @override
+  void dispose() {
+    MainShell.currentTab.removeListener(_followCurrentTab);
+    super.dispose();
+  }
+
+  void _followCurrentTab() {
+    final index = MainShell.currentTab.value;
+    if (index != _index && mounted) setState(() => _index = index);
   }
 
   void _select(int index) {

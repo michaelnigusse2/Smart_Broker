@@ -134,6 +134,24 @@ class CallDetectionPlugin : FlutterPlugin, MethodChannel.MethodCallHandler,
                 }
             }
 
+            // Opens the phone's messaging app with a new message to the number.
+            "text" -> {
+                val number = call.argument<String>("number").orEmpty()
+                val ctx: Context? = activity ?: context
+                if (ctx == null || number.isBlank()) {
+                    result.success(false)
+                    return
+                }
+                val intent = Intent(Intent.ACTION_SENDTO, android.net.Uri.fromParts("smsto", number, null))
+                if (activity == null) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                try {
+                    ctx.startActivity(intent)
+                    result.success(true)
+                } catch (e: Exception) {
+                    result.success(false)
+                }
+            }
+
             else -> result.notImplemented()
         }
     }
