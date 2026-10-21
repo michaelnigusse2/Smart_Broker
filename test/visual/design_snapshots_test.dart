@@ -13,6 +13,7 @@ import 'package:smart_broker/core/repositories/note_repository.dart';
 import 'package:smart_broker/core/repositories/todo_repository.dart';
 import 'package:smart_broker/core/services/profile_service.dart';
 import 'package:smart_broker/core/theme/app_theme.dart';
+import 'package:smart_broker/features/calendar/screens/calendar_screen.dart';
 import 'package:smart_broker/features/contacts/screens/contact_detail_screen.dart';
 import 'package:smart_broker/features/notes/screens/add_note_screen.dart';
 import 'package:smart_broker/features/notes/screens/ai_review_screen.dart';
@@ -275,6 +276,35 @@ Future<void> _seedBoardPromises() async {
   }
 }
 
+/// The day on the Calendar board, plus a few calls on the days around it.
+Future<void> _seedBoardCalendar() async {
+  var number = 300;
+  Future<String> person(String id, String name) async =>
+      (await insertContact(id: id, name: name, phone: '+251 911 000 ${number++}')).id;
+  final abebe = await person('c-abebe', 'Abebe Kebede');
+  final selam = await person('c-selam', 'Selam Tesfaye');
+  final dawit = await person('c-dawit', 'Dawit Alemu');
+  final yonas = await person('c-yonas', 'Yonas Bekele');
+  final hanna = await person('c-hanna', 'Hanna Girma');
+  await insertReminder(contactId: abebe, at: DateTime(2026, 10, 21, 9), title: 'site visit', completed: true);
+  await insertReminder(contactId: selam, at: DateTime(2026, 10, 21, 10, 30), title: 'office lease');
+  await insertReminder(contactId: dawit, at: DateTime(2026, 10, 21, 13), title: 'his office');
+  await insertReminder(contactId: yonas, at: DateTime(2026, 10, 21, 16), title: 'board prep');
+  await insertReminder(contactId: hanna, at: DateTime(2026, 10, 21, 18), title: 'send weekly update');
+  for (final (who, day) in [(hanna, 19), (abebe, 20), (dawit, 20), (selam, 22), (yonas, 23), (hanna, 23)]) {
+    await insertReminder(contactId: who, at: DateTime(2026, 10, day, 11), title: 'follow up');
+  }
+  await TodoRepository().insert(
+    TodoItem(
+      id: '',
+      contactId: selam,
+      title: '3-year numbers',
+      createdAt: DateTime(2026, 10, 20),
+      dueAt: DateTime(2026, 10, 21, 23, 59),
+    ),
+  );
+}
+
 void main() {
   setUpAll(_loadFonts);
   setUp(() async {
@@ -331,6 +361,12 @@ void main() {
       arguments: {'contactId': id, 'rawText': said, 'noteId': null, 'isPostCall': true, 'duration': '6:42'},
     );
     await _snap(tester, 'recap');
+  });
+
+  testWidgets('Calendar, as on the board', (tester) async {
+    await tester.runAsync(_seedBoardCalendar);
+    await _pump(tester, CalendarScreen(clock: _tenPast10));
+    await _snap(tester, 'calendar');
   });
 
   testWidgets('Onboarding steps, as on the boards', (tester) async {

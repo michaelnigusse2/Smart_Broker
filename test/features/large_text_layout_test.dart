@@ -77,13 +77,14 @@ void main() {
     await _pumpScreen(tester, const CalendarScreen());
 
     expect(find.text('Call back about the three-bedroom unit near Bole'), findsOneWidget);
+    expect(find.text('Call · Viewing'), findsOneWidget);
   });
 
-  testWidgets('Calendar week view fits a small phone with large text', (tester) async {
+  testWidgets('Calendar month sheet fits a small phone with large text', (tester) async {
     await tester.runAsync(_seed);
     await _pumpScreen(tester, const CalendarScreen());
 
-    await tester.tap(find.text('Week'));
+    await tester.tap(find.bySemanticsLabel(RegExp('Show the whole month')));
     await tester.pumpAndSettle();
   });
 
