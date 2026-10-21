@@ -149,7 +149,7 @@ rem tool\scribe\run_on_device.sh on the device. "scribe emu" checks the runtime 
 rem (the emulator has no room for the 499 MB model); "scribe phone" runs it all.
 set "SEL=" & set "ABI="
 if /i "!P1!"=="emu" (set "SEL=-e" & set "ABI=x64")
-if /i "!P1!"=="phone" (set "SEL=-d" & set "ABI=arm64")
+if /i "!P1!"=="phone" (set "ABI=arm64" & call :find_phone)
 if not defined SEL (call :done "bad target" & exit /b 0)
 set "SD=build_logs\scribe"
 set "OUT=!SD!\result_!P1!.txt"
@@ -165,6 +165,17 @@ if exist "!SD!\wav" "%ADB%" !SEL! push "!SD!\wav\." /data/local/tmp/scribe/wav/ 
 "%ADB%" !SEL! pull /data/local/tmp/scribe/out "!SD!\out_!P1!" >> "!OUT!" 2>&1
 echo finished %date% %time%>> "!OUT!"
 call :done "scribe"
+exit /b 0
+
+:find_phone
+rem First connected device that is not the emulator (USB or wireless debugging).
+set "PHONE="
+for /f "skip=1 tokens=1,2" %%a in ('"%ADB%" devices') do (
+  if "%%b"=="device" (
+    echo %%a| findstr /b "emulator-" >nul || if not defined PHONE set "PHONE=%%a"
+  )
+)
+if defined PHONE set "SEL=-s !PHONE!"
 exit /b 0
 
 :do_logcat

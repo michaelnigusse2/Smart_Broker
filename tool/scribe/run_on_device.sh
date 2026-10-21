@@ -33,12 +33,12 @@ done
 echo "== bench stream (160 ms chunks), 4 threads"
 peak ./nemo-speech bench asr jfk.wav --model $M -l am-ET -c 1 -n 2 --mode stream --asr.backend.threads 4
 
-mkdir -p out
-for F in wav/*.wav; do
-  [ -f "$F" ] || continue
-  N=$(basename "$F" .wav)
-  echo "== transcribe $N"
-  peak ./nemo-speech transcribe "$F" --model $M -l am-ET --asr.backend.threads 4 --no-warmup -o "out/$N.txt" --force
-  cat "out/$N.txt"
-done
+# The voice notes in wav/: real-time factor over the whole set, transcripts in out/.
+if ls wav/*.wav >/dev/null 2>&1; then
+  echo "== your notes, streaming (0.32 s chunks), 4 threads"
+  peak ./nemo-speech bench asr wav --model $M -l am-ET -c 1 -n 1 --mode stream --chunk-ms 320 --asr.backend.threads 4 --save out/stream
+  echo "== your notes, offline, 4 threads"
+  peak ./nemo-speech bench asr wav --model $M -l am-ET -c 1 -n 1 --asr.backend.threads 4 --save out/offline
+  for F in out/stream/*; do echo "-- $F"; cat "$F"; echo; done
+fi
 echo "== done"
