@@ -55,7 +55,6 @@ class SbFace extends StatelessWidget {
       ),
     );
     if (!late) return ExcludeSemantics(child: face);
-    final dot = size * 0.27;
     return ExcludeSemantics(
       child: SizedBox(
         width: size,
@@ -67,18 +66,33 @@ class SbFace extends StatelessWidget {
             Positioned(
               top: 0,
               right: 0,
-              child: Container(
-                width: dot,
-                height: dot,
-                decoration: BoxDecoration(
-                  color: context.sb.lateDot,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: ringColor ?? context.sb.surface, width: 2),
-                ),
-              ),
+              child: SbLateDot(faceSize: size, ring: ringColor),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// The red "late" dot at a face's top-right: 11 dp on a 40 dp face, with a
+/// 2 dp ring of the surface around it.
+class SbLateDot extends StatelessWidget {
+  const SbLateDot({super.key, this.faceSize = 40, this.ring});
+
+  final double faceSize;
+  final Color? ring;
+
+  @override
+  Widget build(BuildContext context) {
+    final dot = faceSize * 0.275;
+    return Container(
+      width: dot,
+      height: dot,
+      decoration: BoxDecoration(
+        color: context.sb.lateDot,
+        shape: BoxShape.circle,
+        border: Border.all(color: ring ?? context.sb.surface, width: 2, strokeAlign: BorderSide.strokeAlignOutside),
       ),
     );
   }
@@ -302,7 +316,13 @@ class SbPrimaryButton extends StatelessWidget {
               },
         style: FilledButton.styleFrom(
           minimumSize: const Size.fromHeight(60),
-          textStyle: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+          // Button text replaces the ambient style, so name the font here.
+          textStyle: const TextStyle(
+            fontFamily: AppFonts.body,
+            fontFamilyFallback: AppFonts.bodyFallback,
+            fontSize: 17,
+            fontWeight: FontWeight.w600,
+          ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,

@@ -11,12 +11,14 @@ Future<Contact> insertContact({
   String id = 'contact-1',
   String name = 'Test Client One',
   String phone = '+251 911 000 001',
+  String company = '',
   DateTime? lastInteraction,
 }) async {
   final contact = Contact(
     id: id,
     name: name,
     phoneNumber: phone,
+    company: company,
     lastInteraction: lastInteraction ?? DateTime(2026, 1, 1),
   );
   await ContactRepository().insert(contact);

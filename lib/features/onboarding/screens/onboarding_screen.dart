@@ -19,17 +19,21 @@ import '../../../core/transcription/scribe_model_store.dart';
 
 /// First launch: a greeting, the person's name, their work, permissions, done.
 class OnboardingScreen extends StatefulWidget {
-  const OnboardingScreen({super.key});
+  const OnboardingScreen({super.key, this.initialStep = 0});
+
+  /// Opens on a later step (0 = welcome … 4 = ready); for design snapshots.
+  @visibleForTesting
+  final int initialStep;
 
   @override
   State<OnboardingScreen> createState() => _OnboardingScreenState();
 }
 
 class _OnboardingScreenState extends State<OnboardingScreen> {
-  final _pages = PageController();
+  late final _pages = PageController(initialPage: widget.initialStep);
   final _name = TextEditingController();
   final _nameFocus = FocusNode();
-  int _step = 0;
+  late int _step = widget.initialStep;
   WorkType? _work;
 
   @override
@@ -184,7 +188,7 @@ class _StepFrame extends StatelessWidget {
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
           child: Row(
             children: [
               SbCircleButton(icon: LucideIcons.chevronLeft, tooltip: 'Back', onPressed: onBack, size: 40),
@@ -216,11 +220,11 @@ class _StepFrame extends StatelessWidget {
         ),
         Expanded(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(24, 40, 24, 24),
+            padding: const EdgeInsets.fromLTRB(24, 44, 24, 24),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children),
           ),
         ),
-        Padding(padding: const EdgeInsets.fromLTRB(24, 0, 24, 24), child: button),
+        Padding(padding: const EdgeInsets.fromLTRB(24, 0, 24, 28), child: button),
       ],
     );
   }
@@ -237,25 +241,38 @@ class _WelcomeStep extends StatelessWidget {
   Widget build(BuildContext context) {
     final sb = context.sb;
     final text = Theme.of(context).textTheme;
+    // The board puts the greeting 248 dp down an 844 dp screen; keep the
+    // same proportion on shorter and taller phones.
+    final view = View.of(context);
+    final statusBar = view.padding.top / view.devicePixelRatio;
+    final screenHeight = view.physicalSize.height / view.devicePixelRatio;
+    final greetingTop = (screenHeight * 248 / 844 - statusBar - 64).clamp(16.0, 400.0);
     return CustomScrollView(
       slivers: [
         SliverFillRemaining(
           hasScrollBody: false,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
+            padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Spacer(flex: 3),
+                const Align(alignment: Alignment.centerRight, child: _LanguageSwitch()),
+                SizedBox(height: greetingTop),
                 const _CyclingGreeting(),
                 const SizedBox(height: 14),
                 Text(
                   'Your calls,\nremembered.',
-                  style: text.headlineMedium?.copyWith(color: sb.text2, fontWeight: FontWeight.w700),
+                  style: text.headlineMedium?.copyWith(
+                    fontSize: 28,
+                    height: 34 / 28,
+                    letterSpacing: -0.6,
+                    fontWeight: FontWeight.w700,
+                    color: sb.text2,
+                  ),
                 ),
                 const SizedBox(height: 26),
                 const _TibebStripe(width: 120),
-                const Spacer(flex: 4),
+                const Spacer(),
                 const SizedBox(height: 24),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -272,6 +289,84 @@ class _WelcomeStep extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// English | አማርኛ, as on the welcome board. The choice is saved; the
+/// screens themselves are English until the Amharic translation lands.
+class _LanguageSwitch extends StatefulWidget {
+  const _LanguageSwitch();
+
+  @override
+  State<_LanguageSwitch> createState() => _LanguageSwitchState();
+}
+
+class _LanguageSwitchState extends State<_LanguageSwitch> {
+  String _language = 'en';
+
+  @override
+  void initState() {
+    super.initState();
+    ProfileService().getLanguage().then((value) {
+      if (mounted) setState(() => _language = value);
+    });
+  }
+
+  Future<void> _choose(String language) async {
+    if (language == _language) return;
+    setState(() => _language = language);
+    await ProfileService().setLanguage(language);
+    if (!mounted || language != 'am') return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Amharic screens are on the way. Dictation already works in Amharic.')),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final sb = context.sb;
+    Widget option(String code, String label) {
+      final selected = _language == code;
+      return Semantics(
+        button: true,
+        selected: selected,
+        label: label,
+        excludeSemantics: true,
+        child: SbPressable(
+          onTap: () => _choose(code),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            height: 36,
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: selected ? sb.primary : sb.surface.withValues(alpha: 0),
+              borderRadius: BorderRadius.circular(99),
+            ),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 14,
+                height: 20 / 14,
+                fontWeight: FontWeight.w600,
+                color: selected ? sb.onPrimary : sb.text2,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: sb.surface,
+        borderRadius: BorderRadius.circular(99),
+        border: Border.all(color: sb.hairline),
+        boxShadow: [BoxShadow(color: sb.shadow, blurRadius: 2, offset: const Offset(0, 1))],
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [option('en', 'English'), option('am', 'አማርኛ')]),
     );
   }
 }
@@ -319,7 +414,7 @@ class _CyclingGreetingState extends State<_CyclingGreeting> {
       label: 'Selam, hello, akkam',
       excludeSemantics: true,
       child: SizedBox(
-        height: 96,
+        height: 88,
         child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 450),
           switchInCurve: const Cubic(0.05, 0.7, 0.1, 1),
@@ -424,22 +519,30 @@ class _NameStep extends StatelessWidget {
         const SizedBox(height: 36),
         Text('Your name', style: text.labelMedium),
         const SizedBox(height: 8),
-        TextField(
-          controller: controller,
-          focusNode: focusNode,
-          textCapitalization: TextCapitalization.words,
-          textInputAction: TextInputAction.done,
-          autofillHints: const [AutofillHints.givenName],
-          maxLength: 40,
-          onSubmitted: (_) => onSubmitted(),
-          style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
-          decoration: InputDecoration(
-            hintText: 'Your first name',
-            counterText: '',
-            contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: AppRadius.input,
-              borderSide: BorderSide(color: sb.track, width: 2),
+        // The board's field is exactly 64 high; expands fills that box.
+        SizedBox(
+          height: 64,
+          child: TextField(
+            controller: controller,
+            focusNode: focusNode,
+            textCapitalization: TextCapitalization.words,
+            textInputAction: TextInputAction.done,
+            autofillHints: const [AutofillHints.givenName],
+            maxLength: 40,
+            keyboardType: TextInputType.name,
+            expands: true,
+            maxLines: null,
+            onSubmitted: (_) => onSubmitted(),
+            style: const TextStyle(fontSize: 22, height: 28 / 22, fontWeight: FontWeight.w600),
+            textAlignVertical: TextAlignVertical.center,
+            decoration: InputDecoration(
+              hintText: 'Your first name',
+              counterText: '',
+              contentPadding: const EdgeInsets.symmetric(horizontal: 18),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: AppRadius.input,
+                borderSide: BorderSide(color: sb.track, width: 2),
+              ),
             ),
           ),
         ),
@@ -472,10 +575,11 @@ class _WorkStep extends StatelessWidget {
     WorkType.other: LucideIcons.moreHorizontal,
   };
 
+  // As on the board: "I sell" slate, "Real estate" cherry, "Something else" mocha.
   static const _tints = {
-    WorkType.company: SbTint.slate,
-    WorkType.sales: SbTint.sage,
-    WorkType.realEstate: SbTint(Color(0xFFF4E3C4), Color(0xFF7A4B0F)),
+    WorkType.company: SbTint.sage,
+    WorkType.sales: SbTint.slate,
+    WorkType.realEstate: SbTint.cherry,
     WorkType.other: SbTint.mocha,
   };
 
@@ -612,6 +716,8 @@ class _WorkTile extends StatelessWidget {
 
 // ── Step 3: quick setup ──────────────────────────────────────────
 
+/// "Three quick things": contacts and calls (so the app knows who's calling),
+/// the microphone, and the offline voice download, each with a switch.
 class _SetupStep extends StatefulWidget {
   const _SetupStep({required this.name});
 
@@ -625,7 +731,6 @@ class _SetupStepState extends State<_SetupStep> {
   final _calls = CallDetectionService();
   final _store = ScribeModelStore.instance;
   bool _contactsOn = false;
-  bool _callsOn = false;
   bool _micOn = false;
   bool _busy = false;
 
@@ -643,7 +748,7 @@ class _SetupStepState extends State<_SetupStep> {
       await _store.ensureChecked();
       if (!mounted) return;
       setState(() {
-        _callsOn = callsOn;
+        _contactsOn = callsOn;
         _micOn = micOn;
       });
     } catch (e) {
@@ -663,29 +768,49 @@ class _SetupStepState extends State<_SetupStep> {
     }
   }
 
-  Future<void> _allowContacts() => _run(() async {
-    final granted = await PhoneContactService().requestPermission();
-    if (mounted) setState(() => _contactsOn = granted);
-  });
+  void _say(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
 
-  Future<void> _allowCalls() => _run(() async {
-    final granted = await _calls.requestPermission();
-    if (!granted) return;
-    if (await _calls.start()) {
+  /// Contacts plus the phone permissions behind "who's calling" (the card
+  /// shown during calls), and the permission to draw that card.
+  Future<void> _setContacts(bool on) => _run(() async {
+    if (!on) {
+      await SettingsService().setCallDetectionEnabled(false);
+      await _calls.stop();
+      CallMatchingService().stopListening();
+      if (mounted) setState(() => _contactsOn = false);
+      return;
+    }
+    final contacts = await PhoneContactService().requestPermission();
+    final phone = await _calls.requestPermission();
+    if (phone && await _calls.start()) {
       CallMatchingService().startListening();
       await SettingsService().setCallDetectionEnabled(true);
+      if (!await FlutterOverlayWindow.isPermissionGranted()) {
+        await FlutterOverlayWindow.requestPermission();
+      }
     }
-    // The card shown during calls draws over the phone's call screen.
-    if (!await FlutterOverlayWindow.isPermissionGranted()) {
-      await FlutterOverlayWindow.requestPermission();
-    }
-    if (mounted) setState(() => _callsOn = true);
+    if (mounted) setState(() => _contactsOn = contacts && phone);
   });
 
-  Future<void> _allowMic() => _run(() async {
+  Future<void> _setMic(bool on) => _run(() async {
+    if (!on) {
+      // An app can't take back its own permission; Android settings can.
+      _say('To turn the microphone off, use Android settings');
+      return;
+    }
     final granted = await DictationAudio.requestPermission();
     if (mounted) setState(() => _micOn = granted);
   });
+
+  void _setVoice(bool on) {
+    if (on) {
+      _store.download();
+    } else if (_store.isBusy) {
+      _store.cancel();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -697,7 +822,7 @@ class _SetupStepState extends State<_SetupStep> {
         Text.rich(
           TextSpan(
             children: [
-              const TextSpan(text: 'A few quick things,\n'),
+              const TextSpan(text: 'Three quick things,\n'),
               TextSpan(
                 text: widget.name.isEmpty ? 'and done.' : '${widget.name}.',
                 style: TextStyle(color: sb.accent),
@@ -714,53 +839,42 @@ class _SetupStepState extends State<_SetupStep> {
                 icon: LucideIcons.users,
                 tint: SbTint.slate,
                 title: 'Your contacts',
-                subtitle: "Know who's who",
-                done: _contactsOn,
-                actionLabel: 'Allow',
-                onAction: _busy ? null : _allowContacts,
-              ),
-              _SetupRow(
-                icon: LucideIcons.phone,
-                tint: SbTint.sage,
-                title: 'Calls',
-                subtitle: "See who's calling",
-                done: _callsOn,
-                actionLabel: 'Allow',
-                onAction: _busy ? null : _allowCalls,
-                divider: true,
+                subtitle: "Know who's calling",
+                value: _contactsOn,
+                onChanged: _busy ? null : _setContacts,
               ),
               _SetupRow(
                 icon: LucideIcons.mic,
                 tint: SbTint.mocha,
                 title: 'Microphone',
                 subtitle: 'For voice notes',
-                done: _micOn,
-                actionLabel: 'Allow',
-                onAction: _busy ? null : _allowMic,
+                value: _micOn,
+                onChanged: _busy ? null : _setMic,
                 divider: true,
               ),
               ListenableBuilder(
                 listenable: _store,
                 builder: (context, _) {
                   final status = _store.status;
-                  final downloading = status == ScribeModelStatus.downloading || status == ScribeModelStatus.verifying;
+                  final busy = _store.isBusy;
                   final pct = (_store.progress * 100).clamp(0, 100).round();
                   final subtitle = switch (status) {
                     ScribeModelStatus.ready => 'Ready · works offline',
-                    ScribeModelStatus.downloading => '500 MB · $pct%',
-                    ScribeModelStatus.verifying => 'Checking the file',
-                    ScribeModelStatus.failed => 'Download stopped · try again',
-                    ScribeModelStatus.notDownloaded => '500 MB · use Wi-Fi',
+                    ScribeModelStatus.downloading => '500 MB · Wi-Fi only · $pct%',
+                    ScribeModelStatus.verifying => '500 MB · checking',
+                    ScribeModelStatus.failed => 'Stopped · switch on to retry',
+                    ScribeModelStatus.notDownloaded => '500 MB · Wi-Fi only',
                   };
                   return _SetupRow(
                     icon: LucideIcons.download,
-                    tint: const SbTint(Color(0xFFF4E3C4), Color(0xFF7A4B0F)),
+                    tint: const SbTint(Color(0xFFF7DDD3), Color(0xFF8E3321)),
                     title: 'Offline voice',
                     subtitle: subtitle,
-                    done: status == ScribeModelStatus.ready,
-                    actionLabel: status == ScribeModelStatus.failed ? 'Retry' : 'Get',
-                    onAction: downloading ? null : _store.download,
-                    progress: downloading ? _store.progress.clamp(0.0, 1.0) : null,
+                    value: busy || status == ScribeModelStatus.ready,
+                    onChanged: status == ScribeModelStatus.ready || status == ScribeModelStatus.verifying
+                        ? null
+                        : _setVoice,
+                    progress: busy ? _store.progress.clamp(0.0, 1.0) : null,
                     divider: true,
                   );
                 },
@@ -778,15 +892,15 @@ class _SetupStepState extends State<_SetupStep> {
   }
 }
 
+/// One setup row: a 42 dp tinted icon tile, title and one line, a switch.
 class _SetupRow extends StatelessWidget {
   const _SetupRow({
     required this.icon,
     required this.tint,
     required this.title,
     required this.subtitle,
-    required this.done,
-    required this.actionLabel,
-    required this.onAction,
+    required this.value,
+    required this.onChanged,
     this.progress,
     this.divider = false,
   });
@@ -795,78 +909,61 @@ class _SetupRow extends StatelessWidget {
   final SbTint tint;
   final String title;
   final String subtitle;
-  final bool done;
-  final String actionLabel;
-  final VoidCallback? onAction;
+  final bool value;
+  final ValueChanged<bool>? onChanged;
   final double? progress;
   final bool divider;
 
   @override
   Widget build(BuildContext context) {
     final sb = context.sb;
-    final text = Theme.of(context).textTheme;
-    return Container(
-      constraints: const BoxConstraints(minHeight: 76),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        border: divider ? Border(top: BorderSide(color: sb.fill)) : null,
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(color: tint.bg, borderRadius: BorderRadius.circular(13)),
-            child: Icon(icon, size: 21, color: tint.fg),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: text.titleSmall?.copyWith(fontSize: 17)),
-                Text(subtitle, style: text.bodySmall),
-                if (progress != null) ...[
-                  const SizedBox(height: 6),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(99),
-                    child: LinearProgressIndicator(value: progress, minHeight: 4),
-                  ),
-                ],
-              ],
+    return MergeSemantics(
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 76),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          border: divider ? Border(top: BorderSide(color: sb.fill)) : null,
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(color: tint.bg, borderRadius: BorderRadius.circular(13)),
+              child: Icon(icon, size: 22, color: tint.fg),
             ),
-          ),
-          const SizedBox(width: 10),
-          if (done)
-            Semantics(
-              label: '$title is on',
-              child: Container(
-                height: 36,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(color: sb.goodBg, borderRadius: BorderRadius.circular(99)),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(LucideIcons.check, size: 15, color: sb.goodFg),
-                    const SizedBox(width: 4),
-                    Text(
-                      'On',
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: sb.goodFg),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(fontSize: 17, height: 22 / 17, fontWeight: FontWeight.w600, color: sb.text),
+                  ),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 13,
+                      height: 18 / 13,
+                      color: sb.text2,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                  if (progress != null) ...[
+                    const SizedBox(height: 6),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(99),
+                      child: LinearProgressIndicator(value: progress, minHeight: 4, backgroundColor: sb.fill),
                     ),
                   ],
-                ),
+                ],
               ),
-            )
-          else
-            FilledButton(
-              onPressed: onAction,
-              style: FilledButton.styleFrom(
-                minimumSize: const Size(64, 40),
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-              ),
-              child: Text(actionLabel),
             ),
-        ],
+            const SizedBox(width: 10),
+            Switch(value: value, onChanged: onChanged),
+          ],
+        ),
       ),
     );
   }
@@ -883,6 +980,25 @@ class _ReadyStep extends StatelessWidget {
   Widget build(BuildContext context) {
     final sb = context.sb;
     final text = Theme.of(context).textTheme;
+    Widget cap(String label) => Padding(
+      padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+      child: Semantics(header: true, child: Text(label, style: text.labelMedium)),
+    );
+    Widget chip(String label, Color bg, Color fg, {IconData? icon}) => Container(
+      constraints: const BoxConstraints(minHeight: 30),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(99)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[Icon(icon, size: 14, color: fg), const SizedBox(width: 4)],
+          Text(
+            label,
+            style: TextStyle(fontSize: 13, height: 18 / 13, fontWeight: FontWeight.w700, color: fg),
+          ),
+        ],
+      ),
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -906,9 +1022,10 @@ class _ReadyStep extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const SbCap('When they call'),
+              cap('Before each call'),
               SbCard(
-                padding: const EdgeInsets.all(16),
+                radius: 22,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -920,21 +1037,43 @@ class _ReadyStep extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('Selam Tesfaye', style: text.titleMedium),
-                              Text('Dashen Bank · talked yesterday', style: text.bodySmall),
+                              Text(
+                                'Selam Tesfaye',
+                                style: TextStyle(
+                                  fontSize: 17,
+                                  height: 22 / 17,
+                                  fontWeight: FontWeight.w700,
+                                  color: sb.text,
+                                ),
+                              ),
+                              Text(
+                                'Dashen Bank',
+                                style: TextStyle(fontSize: 13, height: 18 / 13, color: sb.text2),
+                              ),
                             ],
+                          ),
+                        ),
+                        Text(
+                          '10:30',
+                          style: TextStyle(
+                            fontSize: 15,
+                            height: 20 / 15,
+                            fontWeight: FontWeight.w700,
+                            color: sb.text,
+                            fontFeatures: const [FontFeature.tabularFigures()],
                           ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: [
-                        SbTag.owe(context, 'numbers'),
-                        SbTag('Example', background: sb.fill, foreground: sb.text2),
-                      ],
+                    Container(
+                      constraints: const BoxConstraints(minHeight: 30),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                      decoration: BoxDecoration(color: sb.oweBg, borderRadius: BorderRadius.circular(10)),
+                      child: Text(
+                        'You owe: numbers',
+                        style: TextStyle(fontSize: 14, height: 20 / 14, fontWeight: FontWeight.w700, color: sb.oweFg),
+                      ),
                     ),
                   ],
                 ),
@@ -948,23 +1087,25 @@ class _ReadyStep extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const SbCap('After you hang up'),
+              cap('After each call'),
               SbCard(
-                padding: const EdgeInsets.all(16),
+                radius: 22,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Call with Selam · 6:42', style: text.titleSmall),
-                    const SizedBox(height: 2),
-                    Text('A quiet note, never the whole app', style: text.bodySmall),
-                    const SizedBox(height: 12),
+                    Text(
+                      'Call with Selam · 6:42',
+                      style: TextStyle(fontSize: 17, height: 22 / 17, fontWeight: FontWeight.w700, color: sb.text),
+                    ),
+                    const SizedBox(height: 10),
                     Wrap(
                       spacing: 6,
                       runSpacing: 6,
                       children: [
-                        SbTag('Settled', icon: LucideIcons.check, background: sb.goodBg, foreground: sb.goodFg),
-                        SbTag('Add note', icon: LucideIcons.mic, background: sb.fill, foreground: sb.text),
-                        SbTag('Not now', background: sb.fill, foreground: sb.text2),
+                        chip('Settled', sb.goodBg, sb.goodFg, icon: LucideIcons.check),
+                        chip('Add note', sb.fill, sb.primary, icon: LucideIcons.mic),
+                        chip('Not now', sb.fill, sb.text2),
                       ],
                     ),
                   ],

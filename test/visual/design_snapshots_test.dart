@@ -1,0 +1,183 @@
+import 'dart:convert';
+import 'dart:io';
+import 'dart:ui' as ui;
+
+import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:smart_broker/core/repositories/note_repository.dart';
+import 'package:smart_broker/core/repositories/todo_repository.dart';
+import 'package:smart_broker/core/services/profile_service.dart';
+import 'package:smart_broker/core/theme/app_theme.dart';
+import 'package:smart_broker/features/onboarding/screens/onboarding_screen.dart';
+import 'package:smart_broker/features/today/screens/today_screen.dart';
+import 'package:smart_broker/models/note.dart';
+import 'package:smart_broker/models/todo_item.dart';
+
+import '../helpers/fixtures.dart';
+import '../helpers/test_db.dart';
+
+// Renders redesigned screens with the app's real fonts at the design boards'
+// size (390 × 844) and saves them to build/design_snapshots/, so each screen
+// can be laid next to its board on the "Espresso · final" canvas.
+// Nothing is compared automatically: the pictures are for review.
+
+const _board = Size(390, 844);
+final _out = Directory('build/design_snapshots');
+
+/// Loads every font the app declares (ours and the icon fonts) from the
+/// asset manifest, so text and icons render as on the phone.
+Future<void> _loadFonts() async {
+  final manifest = jsonDecode(await rootBundle.loadString('FontManifest.json')) as List<dynamic>;
+  for (final entry in manifest.cast<Map<String, dynamic>>()) {
+    final loader = FontLoader(entry['family'] as String);
+    for (final font in (entry['fonts'] as List<dynamic>).cast<Map<String, dynamic>>()) {
+      loader.addFont(rootBundle.load(font['asset'] as String));
+    }
+    await loader.load();
+  }
+}
+
+Future<void> _snap(WidgetTester tester, String name) async {
+  await tester.runAsync(() async {
+    final boundary = tester.renderObject<RenderRepaintBoundary>(find.byKey(const ValueKey('board')));
+    final image = await boundary.toImage(pixelRatio: 2);
+    final png = await image.toByteData(format: ui.ImageByteFormat.png);
+    _out.createSync(recursive: true);
+    File('${_out.path}/$name.png').writeAsBytesSync(png!.buffer.asUint8List());
+  });
+}
+
+Future<void> _pump(WidgetTester tester, Widget screen) async {
+  tester.view.physicalSize = _board * 2;
+  tester.view.devicePixelRatio = 2;
+  addTearDown(tester.view.reset);
+  await tester.runAsync(() async {
+    await tester.pumpWidget(
+      RepaintBoundary(
+        key: const ValueKey('board'),
+        child: MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.lightTheme,
+          // The boards show 24-hour times.
+          builder: (context, child) =>
+              MediaQuery(data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true), child: child!),
+          home: screen,
+        ),
+      ),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 600));
+  });
+  // Two frames: the first builds the loaded screen, the second lets its
+  // entrance animations finish.
+  for (var i = 0; i < 6; i++) {
+    await tester.pump(const Duration(milliseconds: 400));
+  }
+}
+
+DateTime _tenPast10() => DateTime(2026, 10, 21, 10, 10);
+
+Future<void> _seedBoardDay() async {
+  final selam = await insertContact(
+    id: 'c-selam',
+    name: 'Selam Tesfaye',
+    phone: '+251 911 000 001',
+    company: 'Dashen Bank',
+  );
+  final dawit = await insertContact(id: 'c-dawit', name: 'Dawit Alemu', phone: '+251 911 000 002');
+  final yonas = await insertContact(id: 'c-yonas', name: 'Yonas Bekele', phone: '+251 911 000 003');
+  final hanna = await insertContact(id: 'c-hanna', name: 'Hanna Girma', phone: '+251 911 000 004');
+  final lidet = await insertContact(id: 'c-lidet', name: 'ልደት መኮንን', phone: '+251 911 000 005');
+  final meron = await insertContact(id: 'c-meron', name: 'Meron Haile', phone: '+251 911 000 006');
+  await insertReminder(contactId: selam.id, at: DateTime(2026, 10, 21, 10, 30), title: 'Office lease');
+  await insertReminder(contactId: dawit.id, at: DateTime(2026, 10, 21, 13), title: 'Supplier');
+  await insertReminder(contactId: yonas.id, at: DateTime(2026, 10, 21, 16), title: 'Board prep');
+  final todos = TodoRepository();
+  await todos.insert(
+    TodoItem(
+      id: '',
+      contactId: selam.id,
+      title: 'numbers',
+      createdAt: DateTime(2026, 10, 20),
+      dueAt: DateTime(2026, 10, 21, 17),
+    ),
+  );
+  await todos.insert(
+    TodoItem(
+      id: '',
+      contactId: hanna.id,
+      title: 'Contract draft',
+      createdAt: DateTime(2026, 10, 15),
+      dueAt: DateTime(2026, 10, 19),
+    ),
+  );
+  await todos.insert(
+    TodoItem(
+      id: '',
+      contactId: dawit.id,
+      title: 'Payment terms',
+      createdAt: DateTime(2026, 10, 20),
+      dueAt: DateTime(2026, 10, 23),
+    ),
+  );
+  await todos.insert(
+    TodoItem(
+      id: '',
+      contactId: lidet.id,
+      title: 'Office shortlist',
+      createdAt: DateTime(2026, 10, 20),
+      dueAt: DateTime(2026, 10, 28),
+    ),
+  );
+  await todos.insert(
+    TodoItem(
+      id: '',
+      contactId: meron.id,
+      title: 'Site visit',
+      createdAt: DateTime(2026, 10, 20),
+      dueAt: DateTime(2026, 10, 30),
+    ),
+  );
+  // Two notes from this morning's calls that still need wrapping up.
+  for (final contact in [dawit, hanna]) {
+    await NoteRepository().insert(
+      Note(
+        id: '',
+        contactId: contact.id,
+        rawText: 'Talked it through',
+        aiSummary: '',
+        createdAt: DateTime(2026, 10, 21, 9),
+      ),
+    );
+  }
+}
+
+void main() {
+  setUpAll(_loadFonts);
+  setUp(() async {
+    SharedPreferences.setMockInitialValues({});
+    await useFreshTestDatabase();
+  });
+  tearDown(closeTestDatabase);
+
+  testWidgets('Today, as on the board', (tester) async {
+    await tester.runAsync(_seedBoardDay);
+    await tester.runAsync(() => ProfileService().setName('Michael'));
+    await _pump(tester, TodayScreen(clock: _tenPast10));
+    await _snap(tester, 'today');
+  });
+
+  testWidgets('Onboarding steps, as on the boards', (tester) async {
+    await tester.runAsync(() async {
+      await ProfileService().setName('Michael');
+      await ProfileService().setWork(WorkType.company);
+    });
+    const names = ['welcome', 'name', 'work', 'setup', 'ready'];
+    for (var step = 0; step < names.length; step++) {
+      await _pump(tester, OnboardingScreen(key: ValueKey(step), initialStep: step));
+      await _snap(tester, 'onboarding_${step + 1}_${names[step]}');
+    }
+  });
+}

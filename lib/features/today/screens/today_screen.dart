@@ -19,7 +19,9 @@ import '../../../models/reminder.dart';
 import '../../../models/todo_item.dart';
 import '../../home/screens/main_shell.dart';
 
-/// The first tab: what's on today, who's next, and who's waiting on you.
+/// The first tab, built to the "Espresso · final" Today board: the headline,
+/// the rest of the day from "Now" on (the next item opened up), and the
+/// people waiting on you.
 class TodayScreen extends StatefulWidget {
   const TodayScreen({super.key, this.clock});
 
@@ -32,7 +34,11 @@ class TodayScreen extends StatefulWidget {
 
 class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
   Map<String, Contact> _contacts = {};
-  List<Reminder> _today = [];
+
+  /// Today's reminders from now on, in time order.
+  List<Reminder> _upcoming = [];
+
+  /// Open reminders whose time has passed (today or earlier).
   List<Reminder> _late = [];
   List<TodoItem> _pending = [];
   int _notesToFinish = 0;
@@ -72,14 +78,15 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
       final todos = await TodoRepository().getPending();
       final notes = await NoteRepository().counts();
       final now = _now;
-      final startOfDay = DateTime(now.year, now.month, now.day);
-      final endOfDay = startOfDay.add(const Duration(days: 1));
+      // Anything that started in the last five minutes still counts as next.
+      final cutoff = now.subtract(const Duration(minutes: 5));
+      final endOfDay = DateTime(now.year, now.month, now.day).add(const Duration(days: 1));
       if (!mounted) return;
       setState(() {
         _contacts = {for (final c in contacts) c.id: c};
-        _today = reminders.where((r) => !r.dateTime.isBefore(startOfDay) && r.dateTime.isBefore(endOfDay)).toList()
+        _upcoming = reminders.where((r) => !r.dateTime.isBefore(cutoff) && r.dateTime.isBefore(endOfDay)).toList()
           ..sort((a, b) => a.dateTime.compareTo(b.dateTime));
-        _late = reminders.where((r) => r.dateTime.isBefore(startOfDay)).toList();
+        _late = reminders.where((r) => r.dateTime.isBefore(cutoff)).toList();
         _pending = todos;
         _notesToFinish = notes.unprocessed;
         _loading = false;
@@ -110,13 +117,14 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
 
   // ── Derived data ───────────────────────────────────────────────
 
-  DateTime get _endOfToday {
+  /// Promises (open tasks) due today. Ones from earlier days show as late
+  /// under "Waiting on you" instead, as on the board.
+  int get _dueCount {
     final now = _now;
-    return DateTime(now.year, now.month, now.day).add(const Duration(days: 1));
+    final start = DateTime(now.year, now.month, now.day);
+    final end = start.add(const Duration(days: 1));
+    return _pending.where((t) => t.dueAt != null && !t.dueAt!.isBefore(start) && t.dueAt!.isBefore(end)).length;
   }
-
-  /// Promises (open tasks) due by the end of today, late ones included.
-  int get _dueCount => _pending.where((t) => t.dueAt != null && t.dueAt!.isBefore(_endOfToday)).length;
 
   /// The first open promise for a person, soonest due first.
   TodoItem? _promiseFor(String contactId) {
@@ -125,20 +133,32 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
     return mine.isEmpty ? null : mine.first;
   }
 
-  /// People with open promises, the ones running late first.
+  /// People with open promises or missed reminders: anyone late first, then
+  /// whoever is due soonest. The person opened up at the top of the agenda is
+  /// left out, since what you owe them is already shown there.
   List<({Contact contact, bool late})> get _waiting {
     final now = _now;
-    final byContact = <String, List<TodoItem>>{};
-    for (final todo in _pending) {
-      if (_contacts.containsKey(todo.contactId)) byContact.putIfAbsent(todo.contactId, () => []).add(todo);
+    final nextUp = _upcoming.isEmpty ? null : _upcoming.first.contactId;
+    final late = <String, bool>{};
+    final soonest = <String, DateTime>{};
+    void note(String contactId, DateTime? due, bool overdue) {
+      if (contactId == nextUp || !_contacts.containsKey(contactId)) return;
+      late[contactId] = (late[contactId] ?? false) || overdue;
+      final when = due ?? DateTime(9999);
+      final current = soonest[contactId];
+      if (current == null || when.isBefore(current)) soonest[contactId] = when;
     }
-    final rows = [
-      for (final entry in byContact.entries)
-        (contact: _contacts[entry.key]!, late: entry.value.any((t) => t.dueAt != null && t.dueAt!.isBefore(now))),
-    ];
+
+    for (final todo in _pending) {
+      note(todo.contactId, todo.dueAt, todo.dueAt != null && todo.dueAt!.isBefore(now));
+    }
+    for (final reminder in _late) {
+      note(reminder.contactId, reminder.dateTime, true);
+    }
+    final rows = [for (final entry in late.entries) (contact: _contacts[entry.key]!, late: entry.value)];
     rows.sort((a, b) {
       if (a.late != b.late) return a.late ? -1 : 1;
-      return b.contact.lastInteraction.compareTo(a.contact.lastInteraction);
+      return soonest[a.contact.id]!.compareTo(soonest[b.contact.id]!);
     });
     return rows;
   }
@@ -173,33 +193,35 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
             color: sb.primary,
             onRefresh: _load,
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 128),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 128),
               children: [
                 _Header(
                   now: _now,
                   onCalendar: () => _open(AppRoutes.calendar),
                   onSettings: () => _open(AppRoutes.settings),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 22),
                 SbRise(
-                  child: _Headline(things: _today.length + _late.length, due: _dueCount),
+                  child: _Headline(things: _upcoming.length, due: _dueCount),
                 ),
                 if (_notesToFinish > 0) ...[
                   const SizedBox(height: 14),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: _WrapUpTag(count: _notesToFinish, onTap: () => _open(AppRoutes.notesList)),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: _WrapUpTag(count: _notesToFinish, onTap: () => _open(AppRoutes.notesList)),
+                    ),
                   ),
                 ],
                 const SizedBox(height: 24),
                 SbRise(
                   delay: const Duration(milliseconds: 80),
-                  child: _today.isEmpty && _late.isEmpty
+                  child: _upcoming.isEmpty
                       ? _EmptyDay(onAdd: () => _open(AppRoutes.calendar))
                       : _Agenda(
                           now: _now,
-                          late: _late,
-                          today: _today,
+                          upcoming: _upcoming,
                           contacts: _contacts,
                           promiseFor: _promiseFor,
                           onOpenReminder: (r) => _open(AppRoutes.reminderDetail, arguments: r.id),
@@ -225,6 +247,8 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
   }
 }
 
+/// "📅 Wed 21 Oct · ጥቅምት 11" on the left (opens the calendar), the
+/// person's initial on the right (opens Settings).
 class _Header extends StatelessWidget {
   const _Header({required this.now, required this.onCalendar, required this.onSettings});
 
@@ -262,7 +286,12 @@ class _Header extends StatelessWidget {
                             '$date · $ethiopian',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: sb.text2),
+                            style: TextStyle(
+                              fontSize: 14,
+                              height: 20 / 14,
+                              fontWeight: FontWeight.w600,
+                              color: sb.text2,
+                            ),
                           ),
                         ),
                       ],
@@ -306,6 +335,7 @@ class _Header extends StatelessWidget {
   }
 }
 
+/// "3 calls today. / 1 promise due." in Bricolage 36/40, second line lighter.
 class _Headline extends StatelessWidget {
   const _Headline({required this.things, required this.due});
 
@@ -315,7 +345,7 @@ class _Headline extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final sb = context.sb;
-    final first = things == 0 ? 'A clear day.' : '$things ${things == 1 ? 'thing' : 'things'} today.';
+    final first = things == 0 ? 'A clear day.' : '$things ${things == 1 ? 'call' : 'calls'} today.';
     final second = due == 0 ? 'Nothing due.' : '$due ${due == 1 ? 'promise' : 'promises'} due.';
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -335,6 +365,7 @@ class _Headline extends StatelessWidget {
   }
 }
 
+/// The caramel pill under the headline: 36 high, mic, label, chevron.
 class _WrapUpTag extends StatelessWidget {
   const _WrapUpTag({required this.count, required this.onTap});
 
@@ -344,7 +375,7 @@ class _WrapUpTag extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final sb = context.sb;
-    final label = '$count ${count == 1 ? 'note' : 'notes'} to finish';
+    final label = '$count ${count == 1 ? 'note' : 'notes'} to wrap up';
     return Semantics(
       button: true,
       label: label,
@@ -352,12 +383,11 @@ class _WrapUpTag extends StatelessWidget {
       child: SbPressable(
         onTap: onTap,
         child: Container(
-          constraints: const BoxConstraints(minHeight: 40),
-          padding: const EdgeInsets.fromLTRB(14, 8, 10, 8),
+          constraints: const BoxConstraints(minHeight: 36),
+          padding: const EdgeInsets.fromLTRB(14, 6, 12, 6),
           decoration: BoxDecoration(
             color: sb.surface,
             borderRadius: BorderRadius.circular(99),
-            border: Border.all(color: sb.hairline),
             boxShadow: [BoxShadow(color: sb.shadow, blurRadius: 2, offset: const Offset(0, 1))],
           ),
           child: Row(
@@ -368,9 +398,10 @@ class _WrapUpTag extends StatelessWidget {
               Flexible(
                 child: Text(
                   label,
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: sb.accent),
+                  style: TextStyle(fontSize: 14, height: 20 / 14, fontWeight: FontWeight.w700, color: sb.accent),
                 ),
               ),
+              const SizedBox(width: 8),
               Icon(LucideIcons.chevronRight, size: 16, color: sb.accent),
             ],
           ),
@@ -390,6 +421,7 @@ class _EmptyDay extends StatelessWidget {
     final sb = context.sb;
     final text = Theme.of(context).textTheme;
     return SbCard(
+      radius: 28,
       padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
       child: Row(
         children: [
@@ -416,13 +448,13 @@ class _EmptyDay extends StatelessWidget {
   }
 }
 
-/// Today's reminders in time order with a "Now" line. The first one still to
-/// come is opened up: who, what you owe them, and a Call button.
+/// The rest of the day: the "Now" line at the top, then the next item opened
+/// up (face, name, what you owe them, Call), then the ones after it.
+/// Layout follows the board: a 52 dp time column, 8 dp gap, 28 dp corners.
 class _Agenda extends StatelessWidget {
   const _Agenda({
     required this.now,
-    required this.late,
-    required this.today,
+    required this.upcoming,
     required this.contacts,
     required this.promiseFor,
     required this.onOpenReminder,
@@ -430,91 +462,72 @@ class _Agenda extends StatelessWidget {
   });
 
   final DateTime now;
-  final List<Reminder> late;
-  final List<Reminder> today;
+  final List<Reminder> upcoming;
   final Map<String, Contact> contacts;
   final TodoItem? Function(String contactId) promiseFor;
   final ValueChanged<Reminder> onOpenReminder;
   final ValueChanged<Contact> onCall;
 
+  static const timeColumn = 52.0;
+  static const gap = 8.0;
+
   @override
   Widget build(BuildContext context) {
+    final sb = context.sb;
     final use24h = MediaQuery.alwaysUse24HourFormatOf(context);
     final time = use24h ? DateFormat.Hm() : DateFormat.jm();
-    // Anything that started in the last five minutes still counts as "next".
-    final nextIndex = today.indexWhere((r) => !r.dateTime.isBefore(now.subtract(const Duration(minutes: 5))));
-    final rows = <Widget>[];
-
-    for (final r in late) {
-      rows.add(
-        _AgendaRow(
-          reminder: r,
-          contact: contacts[r.contactId],
-          timeLabel: 'Late',
-          late: true,
-          onTap: () => onOpenReminder(r),
-        ),
-      );
-    }
-    for (var i = 0; i < today.length; i++) {
-      final r = today[i];
-      if (i == nextIndex) rows.add(const _NowLine());
-      final past = nextIndex == -1 || i < nextIndex;
-      if (i == nextIndex) {
-        final contact = contacts[r.contactId];
-        rows.add(
-          _NextUp(
-            reminder: r,
-            contact: contact,
-            time: time.format(r.dateTime),
-            relative: _relative(r.dateTime.difference(now)),
-            promise: contact == null ? null : promiseFor(contact.id),
-            onOpen: () => onOpenReminder(r),
-            onCall: contact == null || contact.phoneNumber.trim().isEmpty ? null : () => onCall(contact),
-          ),
-        );
-      } else {
-        rows.add(
-          _AgendaRow(
-            reminder: r,
-            contact: contacts[r.contactId],
-            timeLabel: time.format(r.dateTime),
-            faded: past,
-            onTap: () => onOpenReminder(r),
-          ),
-        );
-      }
-    }
-    if (nextIndex == -1) rows.add(const _NowLine());
-
-    final children = <Widget>[];
-    for (var i = 0; i < rows.length; i++) {
-      final row = rows[i];
-      final previous = i == 0 ? null : rows[i - 1];
-      final divide = i > 0 && row is! _NowLine && previous is! _NowLine;
-      children.add(
-        divide
-            ? DecoratedBox(
-                decoration: BoxDecoration(
-                  border: Border(top: BorderSide(color: context.sb.fill)),
-                ),
-                child: row,
-              )
-            : row,
-      );
-    }
+    final next = upcoming.first;
+    final nextContact = contacts[next.contactId];
     return SbCard(
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children),
+      radius: 28,
+      padding: const EdgeInsets.only(top: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const _NowLine(),
+          _NextUp(
+            reminder: next,
+            contact: nextContact,
+            time: time.format(next.dateTime),
+            relative: _relative(next.dateTime.difference(now)),
+            promise: nextContact == null ? null : promiseFor(nextContact.id),
+            onOpen: () => onOpenReminder(next),
+            onCall: nextContact == null || nextContact.phoneNumber.trim().isEmpty ? null : () => onCall(nextContact),
+          ),
+          for (final r in upcoming.skip(1))
+            // A Container counts the 1 dp top border in its height, like the board.
+            Container(
+              decoration: BoxDecoration(
+                border: Border(top: BorderSide(color: sb.fill)),
+              ),
+              child: _AgendaRow(
+                reminder: r,
+                contact: contacts[r.contactId],
+                timeLabel: time.format(r.dateTime),
+                onTap: () => onOpenReminder(r),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
+  /// "20 min", "2 h", "2 h 15" — the board shows "20 min" under the time.
   static String _relative(Duration d) {
     if (d.inMinutes < 1) return 'now';
-    if (d.inMinutes < 60) return 'in ${d.inMinutes} min';
+    if (d.inMinutes < 60) return '${d.inMinutes} min';
     final hours = d.inHours;
     final minutes = d.inMinutes % 60;
-    return minutes == 0 ? 'in $hours h' : 'in $hours h $minutes';
+    return minutes == 0 ? '$hours h' : '$hours h $minutes';
   }
+}
+
+/// What shows under a name: the company, or what the reminder is about.
+String _detailFor(Contact? contact, Reminder reminder) {
+  if (contact == null) return '';
+  if (contact.company.trim().isNotEmpty) return contact.company.trim();
+  if (contact.role.trim().isNotEmpty) return contact.role.trim();
+  return reminder.title;
 }
 
 class _NowLine extends StatelessWidget {
@@ -528,12 +541,13 @@ class _NowLine extends StatelessWidget {
       child: Row(
         children: [
           SizedBox(
-            width: 60,
+            width: _Agenda.timeColumn,
             child: Text(
               'Now',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: accent),
+              style: TextStyle(fontSize: 12, height: 16 / 12, fontWeight: FontWeight.w700, color: accent),
             ),
           ),
+          const SizedBox(width: _Agenda.gap),
           Container(
             width: 7,
             height: 7,
@@ -547,70 +561,61 @@ class _NowLine extends StatelessWidget {
 }
 
 class _AgendaRow extends StatelessWidget {
-  const _AgendaRow({
-    required this.reminder,
-    required this.contact,
-    required this.timeLabel,
-    required this.onTap,
-    this.faded = false,
-    this.late = false,
-  });
+  const _AgendaRow({required this.reminder, required this.contact, required this.timeLabel, required this.onTap});
 
   final Reminder reminder;
   final Contact? contact;
   final String timeLabel;
   final VoidCallback onTap;
-  final bool faded;
-  final bool late;
 
   @override
   Widget build(BuildContext context) {
     final sb = context.sb;
-    final text = Theme.of(context).textTheme;
     final name = contact?.name ?? reminder.title;
-    final detail = contact == null ? '' : reminder.title;
-    return Opacity(
-      opacity: faded ? 0.5 : 1,
-      child: InkWell(
-        onTap: onTap,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 64),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            child: Row(
-              children: [
-                SizedBox(
-                  width: 60,
-                  child: Text(
-                    timeLabel,
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: late ? sb.late : sb.text2,
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                    ),
-                  ),
+    final detail = _detailFor(contact, reminder);
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            SizedBox(
+              width: _Agenda.timeColumn,
+              child: Text(
+                timeLabel,
+                style: TextStyle(
+                  fontSize: 15,
+                  height: 20 / 15,
+                  fontWeight: FontWeight.w600,
+                  color: sb.text2,
+                  fontFeatures: const [FontFeature.tabularFigures()],
                 ),
-                SbFace(name: name, size: 36),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: text.titleSmall?.copyWith(fontSize: 16),
-                      ),
-                      if (detail.isNotEmpty)
-                        Text(detail, maxLines: 1, overflow: TextOverflow.ellipsis, style: text.bodySmall),
-                    ],
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
+            const SizedBox(width: _Agenda.gap),
+            SbFace(name: name, size: 36),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 16, height: 22 / 16, fontWeight: FontWeight.w600, color: sb.text),
+                  ),
+                  if (detail.isNotEmpty)
+                    Text(
+                      detail,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 13, height: 18 / 13, color: sb.text2),
+                    ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -639,16 +644,18 @@ class _NextUp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final sb = context.sb;
-    final text = Theme.of(context).textTheme;
     final name = contact?.name ?? reminder.title;
-    final detail = contact == null ? '' : reminder.title;
+    final detail = _detailFor(contact, reminder);
+    // A padded Call button is 48 high around its 40 dp pill; take the extra
+    // 4 dp above and below out of the gaps so the pill lands where the board has it.
+    final slack = onCall != null ? 4.0 : 0.0;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      padding: EdgeInsets.fromLTRB(16, 12, 16, 16 - slack),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 60,
+            width: _Agenda.timeColumn,
             child: Padding(
               padding: const EdgeInsets.only(top: 4),
               child: Column(
@@ -656,17 +663,28 @@ class _NextUp extends StatelessWidget {
                 children: [
                   Text(
                     time,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 15,
+                      height: 20 / 15,
                       fontWeight: FontWeight.w700,
-                      fontFeatures: [FontFeature.tabularFigures()],
+                      color: sb.text,
+                      fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
-                  Text(relative, style: TextStyle(fontSize: 12, color: sb.text2)),
+                  Text(
+                    relative,
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 16 / 12,
+                      color: sb.text2,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
                 ],
               ),
             ),
           ),
+          const SizedBox(width: _Agenda.gap),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -686,14 +704,19 @@ class _NextUp extends StatelessWidget {
                               name,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
-                              style: text.titleMedium?.copyWith(fontSize: 18),
+                              style: TextStyle(
+                                fontSize: 18,
+                                height: 24 / 18,
+                                fontWeight: FontWeight.w700,
+                                color: sb.text,
+                              ),
                             ),
                             if (detail.isNotEmpty)
                               Text(
                                 detail,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: text.bodySmall?.copyWith(fontSize: 14),
+                                style: TextStyle(fontSize: 14, height: 20 / 14, color: sb.text2),
                               ),
                           ],
                         ),
@@ -702,28 +725,50 @@ class _NextUp extends StatelessWidget {
                   ),
                 ),
                 if (promise != null || onCall != null) ...[
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    alignment: WrapAlignment.spaceBetween,
+                  SizedBox(height: 12 - slack),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       if (promise != null)
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 200),
-                          child: SbTag.owe(context, promise!.title),
-                        ),
-                      if (onCall != null)
+                        Flexible(
+                          child: Container(
+                            constraints: const BoxConstraints(minHeight: 32),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(color: sb.oweBg, borderRadius: BorderRadius.circular(10)),
+                            child: Text(
+                              'You owe: ${promise!.title}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 14,
+                                height: 20 / 14,
+                                fontWeight: FontWeight.w700,
+                                color: sb.oweFg,
+                              ),
+                            ),
+                          ),
+                        )
+                      else
+                        const SizedBox.shrink(),
+                      if (onCall != null) ...[
+                        const SizedBox(width: 8),
                         FilledButton.icon(
                           onPressed: onCall,
                           icon: const Icon(LucideIcons.phone, size: 16),
                           label: const Text('Call'),
                           style: FilledButton.styleFrom(
-                            minimumSize: const Size(88, 44),
+                            minimumSize: const Size(0, 40),
                             padding: const EdgeInsets.symmetric(horizontal: 16),
+                            tapTargetSize: MaterialTapTargetSize.padded,
+                            textStyle: const TextStyle(
+                              fontFamily: AppFonts.body,
+                              fontFamilyFallback: AppFonts.bodyFallback,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
+                      ],
                     ],
                   ),
                 ],
@@ -736,6 +781,8 @@ class _NextUp extends StatelessWidget {
   }
 }
 
+/// "Waiting on you" with the late count in red and up to three overlapping
+/// faces (a red dot on anyone late), then "+N".
 class _WaitingOnYou extends StatelessWidget {
   const _WaitingOnYou({required this.people, required this.onTap});
 
@@ -745,10 +792,10 @@ class _WaitingOnYou extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final sb = context.sb;
-    final text = Theme.of(context).textTheme;
     final lateCount = people.where((p) => p.late).length;
     final shown = people.take(3).toList();
     final extra = people.length - shown.length;
+    final faces = shown.length + (extra > 0 ? 1 : 0);
     return Semantics(
       button: true,
       label: '${people.length} waiting on you${lateCount > 0 ? ', $lateCount late' : ''}',
@@ -762,11 +809,15 @@ class _WaitingOnYou extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Waiting on you', style: text.titleSmall?.copyWith(fontSize: 16, fontWeight: FontWeight.w700)),
+                  Text(
+                    'Waiting on you',
+                    style: TextStyle(fontSize: 16, height: 22 / 16, fontWeight: FontWeight.w700, color: sb.text),
+                  ),
                   Text(
                     lateCount > 0 ? '$lateCount late' : '${people.length} ${people.length == 1 ? 'person' : 'people'}',
                     style: TextStyle(
                       fontSize: 13,
+                      height: 18 / 13,
                       fontWeight: FontWeight.w600,
                       color: lateCount > 0 ? sb.late : sb.text2,
                     ),
@@ -774,38 +825,48 @@ class _WaitingOnYou extends StatelessWidget {
                 ],
               ),
             ),
+            // Faces overlap by 8; their 3 dp rings and the late dots paint
+            // outside this box, as box-shadows do on the board.
             SizedBox(
-              height: 46,
-              width: 40.0 + 32.0 * (shown.length - 1 + (extra > 0 ? 1 : 0)) + 6,
+              height: 40,
+              width: 40.0 + 32.0 * (faces - 1),
               child: Stack(
                 clipBehavior: Clip.none,
                 children: [
                   for (var i = 0; i < shown.length; i++)
                     Positioned(
                       left: 32.0 * i,
-                      top: 3,
-                      child: SbFace(name: shown[i].contact.name, size: 40, late: shown[i].late, ring: sb.surface),
+                      top: 0,
+                      child: SbFace(name: shown[i].contact.name, size: 40, ring: sb.surface),
                     ),
                   if (extra > 0)
                     Positioned(
                       left: 32.0 * shown.length,
-                      top: 3,
+                      top: 0,
                       child: Container(
                         width: 40,
                         height: 40,
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
-                          color: sb.fill,
+                          color: SbTint.neutral.bg,
                           shape: BoxShape.circle,
                           border: Border.all(color: sb.surface, width: 3, strokeAlign: BorderSide.strokeAlignOutside),
                         ),
                         child: Text(
                           '+$extra',
                           textScaler: TextScaler.noScaling,
-                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: sb.text),
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: SbTint.neutral.fg),
                         ),
                       ),
                     ),
+                  // Late dots go on top of the faces that overlap them.
+                  for (var i = 0; i < shown.length; i++)
+                    if (shown[i].late)
+                      Positioned(
+                        left: 32.0 * i + 40 - 11,
+                        top: 0,
+                        child: SbLateDot(ring: sb.surface),
+                      ),
                 ],
               ),
             ),

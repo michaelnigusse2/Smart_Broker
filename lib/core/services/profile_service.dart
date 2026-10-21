@@ -31,6 +31,7 @@ class ProfileService {
   static const _keyName = 'profile_name';
   static const _keyWork = 'profile_work';
   static const _keyOnboarded = 'onboarding_done_v1';
+  static const _keyLanguage = 'profile_language';
 
   /// The saved first name, for screens that greet the person.
   static final ValueNotifier<String> name = ValueNotifier('');
@@ -60,6 +61,17 @@ class ProfileService {
   Future<void> setWork(WorkType value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyWork, value.name);
+  }
+
+  /// 'en' or 'am', chosen on the welcome screen.
+  Future<String> getLanguage() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_keyLanguage) ?? 'en';
+  }
+
+  Future<void> setLanguage(String value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyLanguage, value);
   }
 
   Future<bool> isOnboarded() async {

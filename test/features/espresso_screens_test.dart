@@ -78,16 +78,24 @@ void main() {
     await _pump(tester, TodayScreen(clock: _tenPast10));
 
     expect(find.textContaining('ጥቅምት 11'), findsOneWidget);
-    expect(find.textContaining('4 things today.'), findsOneWidget);
-    expect(find.textContaining('2 promises due.'), findsOneWidget);
+    // What's left of the day: the 10:30 call and the 13:00 meeting.
+    expect(find.textContaining('2 calls today.'), findsOneWidget);
+    // Only Selam's promise falls due today; Hanna's is from Monday, so it
+    // shows as late under "Waiting on you" instead.
+    expect(find.textContaining('1 promise due.'), findsOneWidget);
+    // As on the board: "Now" heads the list, past items aren't listed.
     expect(find.text('Now'), findsOneWidget);
-    expect(find.text('Late'), findsOneWidget);
+    expect(tester.getTopLeft(find.text('Now')).dy, lessThan(tester.getTopLeft(find.text('20 min')).dy));
+    expect(find.text('Morning check-in'), findsNothing);
+    expect(find.text('Late'), findsNothing);
     // The 10:30 call is next: opened up with what's owed and a Call button.
-    expect(find.text('in 20 min'), findsOneWidget);
+    expect(find.text('20 min'), findsOneWidget);
     expect(find.text('You owe: Send the revised three-year numbers'), findsOneWidget);
     expect(find.text('Call'), findsOneWidget);
     await tester.scrollUntilVisible(find.text('Waiting on you'), 200);
     expect(find.text('Waiting on you'), findsOneWidget);
+    // Hanna's promise is overdue. Selam is left out: she is opened up at the
+    // top of the agenda with what's owed already.
     expect(find.text('1 late'), findsOneWidget);
   });
 
@@ -115,6 +123,8 @@ void main() {
   testWidgets('Onboarding walks from hello to the setup step', (tester) async {
     await _pump(tester, const OnboardingScreen());
 
+    await tester.ensureVisible(find.text('Get started'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Get started'));
     await tester.pumpAndSettle();
     expect(find.textContaining('What should we'), findsOneWidget);
