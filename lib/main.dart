@@ -18,6 +18,7 @@ import 'core/services/profile_service.dart';
 import 'core/services/settings_service.dart';
 import 'core/theme/app_theme.dart';
 import 'core/transcription/licences.dart';
+import 'core/widgets/sheet_route.dart';
 import 'features/calendar/screens/calendar_screen.dart';
 import 'features/calendar/screens/reminder_detail_screen.dart';
 import 'features/calls/screens/call_overlay_screen.dart';
@@ -211,13 +212,16 @@ class _SmartBrokerAppState extends State<SmartBrokerApp> with WidgetsBindingObse
         AppRoutes.notesList: (context) => const NotesListScreen(),
         AppRoutes.tasks: (context) => const TasksScreen(),
         AppRoutes.phoneContactDetail: (context) => const PhoneContactDetailScreen(),
-        AppRoutes.addNote: (context) => const AddNoteScreen(),
         AppRoutes.aiReview: (context) => const AiReviewScreen(),
         AppRoutes.reminderDetail: (context) => const ReminderDetailScreen(),
         AppRoutes.settings: (context) => const SettingsScreen(),
         AppRoutes.calendar: (context) => const CalendarScreen(),
         AppRoutes.onboarding: (context) => const OnboardingScreen(),
       },
+      // The quick note comes up as a sheet over the screen it's opened from.
+      onGenerateRoute: (settings) => settings.name == AppRoutes.addNote
+          ? SheetRoute<void>(settings: settings, builder: (_) => const AddNoteScreen())
+          : null,
     );
   }
 }

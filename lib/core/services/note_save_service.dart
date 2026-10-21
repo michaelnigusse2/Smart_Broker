@@ -11,7 +11,12 @@ class ReviewedNote {
   final String contactId;
   final String rawText;
   final String summary;
+
+  /// What you owe them.
   final List<String> taskTitles;
+
+  /// What they owe you.
+  final List<String> theirTitles;
 
   /// Null when the reminder switch is off.
   final ({String title, DateTime dateTime})? reminder;
@@ -22,6 +27,7 @@ class ReviewedNote {
     required this.rawText,
     required this.summary,
     required this.taskTitles,
+    this.theirTitles = const [],
     this.reminder,
   });
 }
@@ -50,13 +56,25 @@ class NoteSaveService {
 
   static String _normalise(String title) => title.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
 
+  /// A promise is the same one when it's owed the same way and has the same
+  /// title (ignoring case and spaces).
+  static String _key(OwedBy owedBy, String title) => '${owedBy.name}:${_normalise(title)}';
+
   /// Open tasks from an earlier review of [noteId] that saving
-  /// [newTaskTitles] would remove. Used to warn before saving.
-  Future<List<TodoItem>> openTasksThatWouldBeRemoved(String noteId, List<String> newTaskTitles) async {
+  /// [newTaskTitles] (yours) and [newTheirTitles] would remove. Used to warn
+  /// before saving.
+  Future<List<TodoItem>> openTasksThatWouldBeRemoved(
+    String noteId,
+    List<String> newTaskTitles, {
+    List<String> newTheirTitles = const [],
+  }) async {
     final db = await DatabaseHelper().database;
     final rows = await db.query('todos', where: 'noteId = ? AND isCompleted = 0', whereArgs: [noteId]);
-    final keep = newTaskTitles.map(_normalise).toSet();
-    return rows.map(TodoItem.fromMap).where((t) => !keep.contains(_normalise(t.title))).toList();
+    final keep = {
+      for (final t in newTaskTitles) _key(OwedBy.me, t),
+      for (final t in newTheirTitles) _key(OwedBy.them, t),
+    };
+    return rows.map(TodoItem.fromMap).where((t) => !keep.contains(_key(t.owedBy, t.title))).toList();
   }
 
   Future<void> apply(ReviewedNote review) async {
@@ -79,35 +97,41 @@ class NoteSaveService {
         where: 'noteId = ?',
         whereArgs: [review.noteId],
       )).map(TodoItem.fromMap).toList();
+      final wantedKeys = {
+        for (final t in review.taskTitles) _key(OwedBy.me, t),
+        for (final t in review.theirTitles) _key(OwedBy.them, t),
+      };
       final alreadyThere = <String>{};
       for (final todo in existing) {
-        final key = _normalise(todo.title);
+        final key = _key(todo.owedBy, todo.title);
         if (todo.isCompleted) {
           alreadyThere.add(key);
           continue;
         }
-        final stillWanted = review.taskTitles.any((t) => _normalise(t) == key);
-        if (stillWanted) {
+        if (wantedKeys.contains(key)) {
           alreadyThere.add(key);
         } else {
           await txn.delete('todos', where: 'id = ?', whereArgs: [todo.id]);
         }
       }
-      for (final title in review.taskTitles) {
-        final trimmed = title.trim();
-        final key = _normalise(trimmed);
-        if (trimmed.isEmpty || alreadyThere.contains(key)) continue;
-        alreadyThere.add(key);
-        await txn.insert(
-          'todos',
-          TodoItem(
-            id: _uuid.v4(),
-            contactId: review.contactId,
-            noteId: review.noteId,
-            title: trimmed,
-            createdAt: now,
-          ).toMap(),
-        );
+      for (final (owedBy, titles) in [(OwedBy.me, review.taskTitles), (OwedBy.them, review.theirTitles)]) {
+        for (final title in titles) {
+          final trimmed = title.trim();
+          final key = _key(owedBy, trimmed);
+          if (trimmed.isEmpty || alreadyThere.contains(key)) continue;
+          alreadyThere.add(key);
+          await txn.insert(
+            'todos',
+            TodoItem(
+              id: _uuid.v4(),
+              contactId: review.contactId,
+              noteId: review.noteId,
+              title: trimmed,
+              createdAt: now,
+              owedBy: owedBy,
+            ).toMap(),
+          );
+        }
       }
 
       // ── Reminder ────────────────────────────────────────────────

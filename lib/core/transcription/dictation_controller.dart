@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 
@@ -51,6 +52,11 @@ class DictationController extends ChangeNotifier {
   DictationState _state = DictationState.idle;
   String _liveText = '';
   String? _error;
+  DateTime? _listeningSince;
+  final List<double> _levels = [];
+
+  /// How many recent microphone levels [levels] keeps (one per audio chunk).
+  static const levelCount = 34;
 
   DictationState get state => _state;
 
@@ -59,6 +65,33 @@ class DictationController extends ChangeNotifier {
   String? get error => _error;
   bool get isActive =>
       _state == DictationState.preparing || _state == DictationState.listening || _state == DictationState.finishing;
+
+  /// The most recent microphone levels, 0 (silent) to 1 (loud), oldest first.
+  List<double> get levels => List.unmodifiable(_levels);
+
+  /// How long this dictation has been listening.
+  Duration get elapsed => _listeningSince == null ? Duration.zero : DateTime.now().difference(_listeningSince!);
+
+  /// Loudness of one chunk of 16-bit little-endian PCM, eased so speech
+  /// fills the bars and silence stays low.
+  static double levelOf(Uint8List pcm) {
+    if (pcm.length < 2) return 0;
+    final data = ByteData.sublistView(pcm);
+    var sum = 0.0;
+    final samples = pcm.length ~/ 2;
+    for (var i = 0; i < samples; i++) {
+      final v = data.getInt16(i * 2, Endian.little) / 32768.0;
+      sum += v * v;
+    }
+    final rms = math.sqrt(sum / samples);
+    return math.min(1.0, math.sqrt(rms * 6));
+  }
+
+  void _addLevel(Uint8List chunk) {
+    _levels.add(levelOf(chunk));
+    if (_levels.length > levelCount) _levels.removeAt(0);
+    if (!_disposed) notifyListeners();
+  }
 
   Future<void> start() async {
     if (isActive) return;
@@ -92,7 +125,12 @@ class DictationController extends ChangeNotifier {
         },
         onError: (Object e) => _abort('Transcription stopped: $e'),
       );
-      _audioSub = _audio().listen(engine.addAudio, onError: (Object e) => _abort(_micMessage(e)));
+      _levels.clear();
+      _audioSub = _audio().listen((chunk) {
+        engine.addAudio(chunk);
+        _addLevel(chunk);
+      }, onError: (Object e) => _abort(_micMessage(e)));
+      _listeningSince = DateTime.now();
       _set(DictationState.listening);
     } catch (e) {
       AppLog.w(_tag, 'could not start', e);

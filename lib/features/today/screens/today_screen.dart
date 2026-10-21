@@ -143,7 +143,12 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
     await WrapUpStore.remove(chosen.callId);
     await _open(
       AppRoutes.addNote,
-      arguments: {'contactId': chosen.contactId, 'isPostCall': true, 'duration': chosen.length},
+      arguments: {
+        'contactId': chosen.contactId,
+        'isPostCall': true,
+        'duration': chosen.length,
+        'marks': chosen.marks,
+      },
     );
   }
 

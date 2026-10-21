@@ -7,11 +7,16 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
+import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 import 'package:smart_broker/core/repositories/note_repository.dart';
 import 'package:smart_broker/core/repositories/todo_repository.dart';
 import 'package:smart_broker/core/services/profile_service.dart';
 import 'package:smart_broker/core/theme/app_theme.dart';
 import 'package:smart_broker/features/contacts/screens/contact_detail_screen.dart';
+import 'package:smart_broker/features/notes/screens/add_note_screen.dart';
+import 'package:smart_broker/features/notes/screens/ai_review_screen.dart';
+import 'package:smart_broker/models/ai_result.dart';
 import 'package:smart_broker/features/contacts/screens/contacts_screen.dart';
 import 'package:smart_broker/features/onboarding/screens/onboarding_screen.dart';
 import 'package:smart_broker/features/today/screens/today_screen.dart';
@@ -62,6 +67,8 @@ Future<void> _pump(WidgetTester tester, Widget screen, {Object? arguments}) asyn
       RepaintBoundary(
         key: const ValueKey('board'),
         child: MaterialApp(
+          // A new app per screen, so its route is the one built (not the last one).
+          key: ObjectKey(screen),
           debugShowCheckedModeBanner: false,
           theme: AppTheme.lightTheme,
           // The boards show 24-hour times.
@@ -272,6 +279,7 @@ void main() {
   setUpAll(_loadFonts);
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
+    SharedPreferencesAsyncPlatform.instance = InMemorySharedPreferencesAsync.empty();
     await useFreshTestDatabase();
   });
   tearDown(closeTestDatabase);
@@ -299,6 +307,30 @@ void main() {
     await tester.runAsync(_seedBoardPromises);
     await _pump(tester, TasksScreen(clock: _tenPast10));
     await _snap(tester, 'promises');
+  });
+
+  testWidgets('Quick note and recap, as on the boards', (tester) async {
+    final id = (await tester.runAsync(
+      () => insertContact(id: 'c-selam', name: 'Selam Tesfaye', phone: '+251 911 000 001', company: 'Dashen Bank'),
+    ))!.id;
+    await _pump(tester, const AddNoteScreen(), arguments: {'contactId': id, 'isPostCall': true, 'duration': '6:42'});
+    await _snap(tester, 'quick_note');
+
+    const said = 'ዋጋውን 4,000,000 ብር ካደረግን ሰኞ ትፈርማለች። ዓርብ አዲሱን ቁጥር እልካለሁ።';
+    await _pump(
+      tester,
+      AiReviewScreen(
+        analyzeForTest: (_) async => AiResult(
+          summary: said,
+          actionItems: ['Revised numbers'],
+          theirItems: ['Signed offer'],
+          reminderTitle: 'Call Selam about the offer',
+          reminderDate: DateTime(2026, 10, 26, 9),
+        ),
+      ),
+      arguments: {'contactId': id, 'rawText': said, 'noteId': null, 'isPostCall': true, 'duration': '6:42'},
+    );
+    await _snap(tester, 'recap');
   });
 
   testWidgets('Onboarding steps, as on the boards', (tester) async {

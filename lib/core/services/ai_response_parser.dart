@@ -20,6 +20,8 @@ class AiResponseParser {
       // 3. Extract fields with fallbacks
       final summary = json['summary']?.toString() ?? '';
       final actionItems = (json['actionItems'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+      // Older answers (and models that skip it) have no theirItems.
+      final theirItems = (json['theirItems'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
       final reminder = json['reminder'];
 
       // 4. Parse reminder date if present
@@ -47,6 +49,7 @@ class AiResponseParser {
       return AiResult(
         summary: summary,
         actionItems: actionItems,
+        theirItems: theirItems,
         reminderTitle: reminderTitle,
         reminderDate: reminderDate,
       );

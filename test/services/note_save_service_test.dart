@@ -110,4 +110,29 @@ void main() {
     expect(cancelled, [id]);
     expect(scheduled, isEmpty);
   });
+
+  test('what they owe is saved on their side, and kept apart from yours', () async {
+    await service.apply(
+      ReviewedNote(
+        noteId: noteId,
+        contactId: contactId,
+        rawText: 'Viewing next Monday',
+        summary: 'Summary',
+        taskTitles: ['Send floor plan'],
+        theirTitles: ['Signed offer', 'Send floor plan'],
+      ),
+    );
+    final saved = {for (final t in await tasks()) '${t.owedBy.name}:${t.title}'};
+    expect(saved, {'me:Send floor plan', 'them:Signed offer', 'them:Send floor plan'});
+
+    // A re-review that drops "Signed offer" removes only that one.
+    expect(
+      (await service.openTasksThatWouldBeRemoved(
+        noteId,
+        ['Send floor plan'],
+        newTheirTitles: ['Send floor plan'],
+      )).map((t) => t.title),
+      ['Signed offer'],
+    );
+  });
 }

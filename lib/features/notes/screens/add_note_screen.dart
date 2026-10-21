@@ -1,15 +1,28 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
-import '../../../core/theme/app_theme.dart';
+
 import '../../../core/constants/app_routes.dart';
-import '../../../core/widgets/constrained_layout.dart';
-import '../../../models/note.dart';
+import '../../../core/repositories/contact_repository.dart';
 import '../../../core/repositories/note_repository.dart';
 import '../../../core/services/overlay_draft_service.dart';
+import '../../../core/theme/app_theme.dart';
+import '../../../core/theme/sb_widgets.dart';
 import '../../../core/transcription/dictation_controller.dart';
 import '../../../core/transcription/offline_transcriber.dart';
-import '../widgets/dictation_panel.dart';
+import '../../../core/transcription/scribe_model_store.dart';
+import '../../../core/widgets/constrained_layout.dart';
+import '../../../models/note.dart';
 
+/// A note for one person, built to the "Espresso · final" quick-note board:
+/// "Note for Selam", the words in large type as you say or type them, the
+/// microphone level while it listens, and Cancel / Done, in a sheet over the
+/// screen it was opened from. Done saves the note and opens "From your call"
+/// to pick out the promises; closing keeps unsaved words as a draft.
+///
+/// Arguments: a contact id, a [Note] to edit, or a map with `contactId`,
+/// `isPostCall`, `duration` ("6:42") and `marks` (from the call overlay).
 class AddNoteScreen extends StatefulWidget {
   const AddNoteScreen({super.key});
 
@@ -18,17 +31,20 @@ class AddNoteScreen extends StatefulWidget {
 }
 
 class _AddNoteScreenState extends State<AddNoteScreen> {
-  final TextEditingController _noteController = TextEditingController();
-  String? _contactId;
-  Note? _note;
-  bool _isPostCall = false;
-  String? _durationStr;
-  bool _isDraftRestored = false;
-  bool _isSaving = false;
+  final _noteController = TextEditingController();
+  final _noteFocus = FocusNode();
   final _draftService = OverlayDraftService();
 
-  /// Id of the note once it has been saved from this screen (so pressing
-  /// Save/AI Review again updates it instead of creating a duplicate).
+  String? _contactId;
+  String _name = '';
+  Note? _note;
+  bool _isPostCall = false;
+  String? _duration;
+  List<Map<String, dynamic>> _marks = [];
+  bool _draftRestored = false;
+  bool _saving = false;
+
+  /// Id of the note once saved from this screen (so saving again updates it).
   String? _savedNoteId;
 
   /// The text as last saved, to tell whether closing would lose edits.
@@ -36,6 +52,7 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
 
   /// Offline Amharic dictation; null on phones without the native library.
   DictationController? _dictation;
+  Timer? _clock;
 
   @override
   void initState() {
@@ -43,67 +60,89 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
     if (OfflineTranscriber.isSupported) {
       _dictation = DictationController()..addListener(_onDictationChanged);
     }
+    _noteController.addListener(() => setState(() {}));
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_contactId == null && _note == null) {
-      final args = ModalRoute.of(context)?.settings.arguments;
-      if (args is String) {
-        _contactId = args;
-      } else if (args is Map<String, dynamic>) {
-        _contactId = args['contactId'] as String?;
-        _isPostCall = args['isPostCall'] as bool? ?? false;
-        _durationStr = args['duration'] as String?;
-      } else if (args is Note) {
-        _note = args;
-        _contactId = args.contactId;
-        _noteController.text = args.rawText;
-      }
-
-      _loadDraftIfNeeded();
+    if (_contactId != null || _note != null) return;
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is String) {
+      _contactId = args;
+    } else if (args is Map) {
+      _contactId = args['contactId'] as String?;
+      _isPostCall = args['isPostCall'] as bool? ?? false;
+      _duration = args['duration'] as String?;
+      _marks = [for (final m in (args['marks'] as List? ?? const [])) Map<String, dynamic>.from(m as Map)];
+    } else if (args is Note) {
+      _note = args;
+      _contactId = args.contactId;
+      _noteController.text = args.rawText;
     }
+    _start();
   }
 
-  Future<void> _loadDraftIfNeeded() async {
-    // Restore anything typed in the call overlay (also after a post-call prompt).
-    if (_contactId != null && _note == null) {
-      final draft = await _draftService.loadDraft(_contactId!);
+  /// Loads the person, restores a draft, and starts listening straight away
+  /// when the offline model is ready and there's nothing written yet.
+  Future<void> _start() async {
+    final id = _contactId;
+    if (id == null) return;
+    final contact = await ContactRepository().getById(id);
+    if (_note == null) {
+      final draft = await _draftService.loadDraft(id);
       if (draft != null && draft.isNotEmpty && _noteController.text.isEmpty) {
-        if (mounted) {
-          setState(() {
-            _noteController.text = draft;
-            _isDraftRestored = true;
-          });
-        }
+        _noteController.text = draft;
+        _draftRestored = true;
       }
+    }
+    if (!mounted) return;
+    setState(() => _name = contact?.name ?? '');
+    final dictation = _dictation;
+    if (dictation != null && _noteController.text.isEmpty && await ScribeModelStore.instance.ensureChecked()) {
+      if (mounted) await _startDictation();
+    } else if (mounted) {
+      _noteFocus.requestFocus();
     }
   }
 
   @override
   void dispose() {
+    _clock?.cancel();
     _dictation?.removeListener(_onDictationChanged);
     _dictation?.dispose();
     _noteController.dispose();
+    _noteFocus.dispose();
     super.dispose();
   }
 
-  // ── Dictation ────────────────────────────────────────────────────────
+  String get _firstName => _name.trim().isEmpty ? '' : _name.trim().split(RegExp(r'\s+')).first;
+
+  bool get _listening => _dictation?.isActive ?? false;
+
+  // ── Dictation ──────────────────────────────────────────────────
 
   Future<void> _startDictation() async {
-    FocusScope.of(context).unfocus(); // room for the live text
+    _noteFocus.unfocus();
     await _dictation?.start();
+    _clock?.cancel();
+    _clock = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted && _listening) setState(() {});
+    });
   }
 
+  /// Stops listening and puts what was said into the note.
   Future<void> _finishDictation() async {
     final text = await _dictation?.stop() ?? '';
-    if (!mounted) return;
-    if (text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No speech was recognised')));
-      return;
-    }
+    _clock?.cancel();
+    if (!mounted || text.isEmpty) return;
     _insertAtCursor(text);
+  }
+
+  Future<void> _cancelDictation() async {
+    await _dictation?.cancel();
+    _clock?.cancel();
+    if (mounted) setState(() {});
   }
 
   void _onDictationChanged() {
@@ -127,11 +166,11 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
         title: const Text('Download the Amharic model?'),
         content: const Text(
           'Dictation runs on this phone, so your notes are never uploaded. It needs a one-time '
-          '499 MB download — best over Wi-Fi.',
+          '499 MB download, best over Wi-Fi.',
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Not now')),
-          ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Open Settings')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Open Settings')),
         ],
       ),
     );
@@ -155,12 +194,14 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
     );
   }
 
+  // ── Saving ─────────────────────────────────────────────────────
+
   /// Saves the raw note before anything else, so it survives no key, no
   /// network or a failed AI call. Returns the note id, or null if empty.
   Future<String?> _persist() async {
     final text = _noteController.text.trim();
     if (text.isEmpty || _contactId == null) return null;
-    setState(() => _isSaving = true);
+    setState(() => _saving = true);
     try {
       final id = await NoteRepository().saveNote(
         contactId: _contactId!,
@@ -172,56 +213,68 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
       await _draftService.clearDraft(_contactId!);
       return id;
     } finally {
-      if (mounted) setState(() => _isSaving = false);
+      if (mounted) setState(() => _saving = false);
     }
   }
 
-  Future<void> _save() async {
+  /// Done: finish listening, save, and open "From your call".
+  Future<void> _done() async {
+    if (_listening) await _finishDictation();
     final id = await _persist();
     if (id == null || !mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Note saved')),
-    );
-    Navigator.pop(context, true);
-  }
-
-  Future<void> _saveAndReview() async {
-    final id = await _persist();
-    if (id == null || !mounted) return;
-    Navigator.pushNamed(
+    await Navigator.pushNamed(
       context,
       AppRoutes.aiReview,
       arguments: {
         'contactId': _contactId,
         'rawText': _noteController.text.trim(),
         'noteId': id,
+        'isPostCall': _isPostCall,
+        'duration': ?_duration,
       },
     );
   }
 
   /// Closing with unsaved text keeps it as a draft instead of losing it.
   Future<void> _close() async {
-    if (_dictation?.state == DictationState.listening) await _finishDictation();
+    if (_listening) await _finishDictation();
     if (!mounted) return;
     final text = _noteController.text.trim();
     final unsaved = text.isNotEmpty && text != (_savedText ?? _note?.rawText);
     if (unsaved && _contactId != null) {
       await _draftService.saveDraft(_contactId!, text);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Draft kept — it will be here next time')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Draft kept for next time')));
     }
     if (mounted) Navigator.pop(context);
   }
 
+  // ── Build ──────────────────────────────────────────────────────
+
+  static String _clockText(Duration d) => '${d.inMinutes}:${(d.inSeconds % 60).toString().padLeft(2, '0')}';
+
+  static String _markLabel(Map<String, dynamic> mark, String first) {
+    final at = mark['at'] as int? ?? 0;
+    final when = '${at ~/ 60}:${(at % 60).toString().padLeft(2, '0')}';
+    final what = switch (mark['type']) {
+      'mine' => 'You promised',
+      'theirs' => first.isEmpty ? 'They promised' : '$first promised',
+      _ => 'Follow up',
+    };
+    return '$what · $when';
+  }
+
   @override
   Widget build(BuildContext context) {
+    final sb = context.sb;
     if (_contactId == null) {
-      return const Scaffold(
-        body: Center(child: Text('Error: No contact ID provided')),
-      );
+      return const Scaffold(body: Center(child: Text('No person was given for this note.')));
     }
+    final dictation = _dictation;
+    final listening = _listening;
+    final hasText = _noteController.text.trim().isNotEmpty;
+    final live = dictation?.liveText ?? '';
+    final bigText = TextStyle(fontSize: 21, height: 32 / 21, fontWeight: FontWeight.w500, color: sb.text);
 
     // The system back gesture goes through _close too, so typed text is kept.
     return PopScope(
@@ -230,123 +283,266 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
         if (!didPop) _close();
       },
       child: Scaffold(
-        backgroundColor: AppColors.surface, // Distraction free pure white
-        floatingActionButton: _dictation == null || _dictation!.isActive
-            ? null
-            : FloatingActionButton.extended(
-                onPressed: _isSaving ? null : _startDictation,
-                tooltip: 'Dictate in Amharic (works offline)',
-                backgroundColor: AppColors.textPrimary,
-                foregroundColor: Colors.white,
-                icon: const Icon(LucideIcons.mic),
-                label: const Text('Dictate'),
+        backgroundColor: Colors.transparent,
+        body: Column(
+          children: [
+            // The dimmed screen above the sheet: tap it to close.
+            Expanded(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _saving ? null : _close,
+                child: const SizedBox.expand(),
               ),
-        bottomNavigationBar: _dictation != null && _dictation!.isActive
-            ? DictationPanel(controller: _dictation!, onDone: _finishDictation, onCancel: () => _dictation!.cancel())
-            : null,
-        appBar: AppBar(
-          backgroundColor: AppColors.surface,
-          elevation: 0,
-          leading: IconButton(
-            icon: const Icon(LucideIcons.x),
-            tooltip: 'Close',
-            onPressed: _isSaving ? null : _close,
-          ),
-          actions: [
-            TextButton(
-              onPressed: _isSaving ? null : _save,
-              child: const Text('Save'),
             ),
-            TextButton.icon(
-              onPressed: _isSaving ? null : _saveAndReview,
-              icon: const Icon(LucideIcons.sparkles, size: 16),
-              label: const Text('AI Review'),
-            ),
-            const SizedBox(width: AppSpacing.sm),
-          ],
-        ),
-        body: ConstrainedLayout(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxl, vertical: AppSpacing.lg),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (_isPostCall)
-                  Container(
-                    margin: const EdgeInsets.only(bottom: AppSpacing.lg),
-                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(AppRadius.md),
-                      border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
+            ConstrainedLayout(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: sb.surface,
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+                ),
+                padding: EdgeInsets.fromLTRB(20, 10, 20, 24 + MediaQuery.paddingOf(context).bottom),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Drag the handle down to close.
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onVerticalDragEnd: (d) {
+                        if ((d.primaryVelocity ?? 0) > 200 && !_saving) _close();
+                      },
+                      child: Center(
+                        child: Container(
+                          width: 40,
+                          height: 5,
+                          decoration: BoxDecoration(color: sb.track, borderRadius: BorderRadius.circular(99)),
+                        ),
+                      ),
                     ),
-                    child: Row(
+                    const SizedBox(height: 14),
+                    Row(
                       children: [
-                        const Icon(LucideIcons.phone, size: 16, color: AppColors.primary),
-                        const SizedBox(width: AppSpacing.sm),
+                        SbFace(name: _name.isEmpty ? '?' : _name, size: 36),
+                        const SizedBox(width: 12),
                         Expanded(
                           child: Text(
-                            'Auto-detected call — $_durationStr',
-                            style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w500, fontSize: 13),
+                            _firstName.isEmpty ? 'Note' : 'Note for $_firstName',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 16,
+                              height: 22 / 16,
+                              fontWeight: FontWeight.w700,
+                              color: sb.text,
+                            ),
                           ),
                         ),
+                        if (listening)
+                          Semantics(
+                            label: 'Listening, ${_clockText(dictation!.elapsed)}',
+                            excludeSemantics: true,
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: BoxDecoration(color: sb.lateDot, shape: BoxShape.circle),
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  _clockText(dictation.elapsed),
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    height: 20 / 14,
+                                    fontWeight: FontWeight.w700,
+                                    color: sb.text,
+                                    fontFeatures: const [FontFeature.tabularFigures()],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        else if (_isPostCall && _duration != null)
+                          Text(
+                            'Call · $_duration',
+                            style: TextStyle(
+                              fontSize: 13,
+                              height: 18 / 13,
+                              fontWeight: FontWeight.w600,
+                              color: sb.text2,
+                            ),
+                          ),
                       ],
                     ),
-                  ),
-                if (_isDraftRestored)
-                  Container(
-                    margin: const EdgeInsets.only(bottom: AppSpacing.md),
-                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(AppRadius.sm),
-                      border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
+                    if (_marks.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [
+                          for (final m in _marks)
+                            SbTag(_markLabel(m, _firstName), background: sb.fill, foreground: sb.text, small: true),
+                        ],
+                      ),
+                    ],
+                    if (_draftRestored) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        'Picked up from your call',
+                        style: TextStyle(fontSize: 13, height: 18 / 13, color: sb.text2),
+                      ),
+                    ],
+                    const SizedBox(height: 18),
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minHeight: 96,
+                        maxHeight: MediaQuery.sizeOf(context).height * 0.4,
+                      ),
+                      child: listening
+                          ? SingleChildScrollView(
+                              reverse: true,
+                              child: Text.rich(
+                                TextSpan(
+                                  children: [
+                                    if (hasText) TextSpan(text: '${_noteController.text.trim()} '),
+                                    TextSpan(text: live),
+                                    WidgetSpan(
+                                      alignment: PlaceholderAlignment.middle,
+                                      child: Container(
+                                        width: 2,
+                                        height: 24,
+                                        margin: const EdgeInsets.only(left: 3),
+                                        color: sb.primary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                style: bigText,
+                              ),
+                            )
+                          : TextField(
+                              controller: _noteController,
+                              focusNode: _noteFocus,
+                              minLines: 3,
+                              maxLines: null,
+                              textCapitalization: TextCapitalization.sentences,
+                              style: bigText,
+                              decoration: InputDecoration(
+                                hintText: dictation == null ? 'What did you agree?' : 'Say it or type it',
+                                hintStyle: bigText.copyWith(color: sb.text3),
+                                filled: false,
+                                border: InputBorder.none,
+                                enabledBorder: InputBorder.none,
+                                focusedBorder: InputBorder.none,
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                            ),
                     ),
-                    child: Row(
+                    if (listening) ...[
+                      const SizedBox(height: 6),
+                      _LevelBars(levels: dictation!.levels),
+                    ],
+                    const SizedBox(height: 18),
+                    Row(
                       children: [
-                        const Icon(LucideIcons.fileClock, color: AppColors.primary, size: 16),
-                        const SizedBox(width: AppSpacing.sm),
-                        const Expanded(
-                          child: Text(
-                            'Draft from your last call restored',
-                            style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w500, fontSize: 13),
-                          ),
+                        Expanded(
+                          flex: 10,
+                          child: listening
+                              ? _BottomButton(label: 'Cancel', onTap: _cancelDictation)
+                              : _BottomButton(
+                                  label: 'Talk',
+                                  icon: LucideIcons.mic,
+                                  onTap: dictation == null || _saving ? null : _startDictation,
+                                ),
                         ),
-                        IconButton(
-                          icon: const Icon(LucideIcons.x, color: AppColors.primary, size: 16),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                          onPressed: () => setState(() => _isDraftRestored = false),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          flex: 14,
+                          child: _BottomButton(
+                            label: 'Done',
+                            filled: true,
+                            onTap: _saving || (!hasText && live.isEmpty) ? null : _done,
+                          ),
                         ),
                       ],
                     ),
-                  ),
-                Text(
-                  'Meeting Notes',
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(color: AppColors.textTertiary),
+                  ],
                 ),
-                const SizedBox(height: AppSpacing.md),
-                Expanded(
-                  child: TextField(
-                    controller: _noteController,
-                    maxLines: null,
-                    expands: true,
-                    autofocus: true,
-                    textAlignVertical: TextAlignVertical.top,
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontSize: 18, height: 1.6),
-                    decoration: InputDecoration(
-                      hintText: 'Start typing...',
-                      hintStyle: Theme.of(
-                        context,
-                      ).textTheme.bodyLarge?.copyWith(fontSize: 18, color: AppColors.textTertiary),
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      filled: false,
-                      // Room below the last line for the Dictate button.
-                      contentPadding: EdgeInsets.only(bottom: _dictation == null ? 0 : 72),
-                    ),
-                  ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The microphone level as 34 thin bars, newest on the right.
+class _LevelBars extends StatelessWidget {
+  const _LevelBars({required this.levels});
+
+  final List<double> levels;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = context.sb.primary;
+    const count = DictationController.levelCount;
+    final padded = [...List.filled(count - levels.length.clamp(0, count), 0.0), ...levels];
+    return SizedBox(
+      height: 48,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          for (var i = 0; i < count; i++) ...[
+            if (i > 0) const SizedBox(width: 4),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 120),
+              width: 4,
+              height: 6 + 36 * padded[i],
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.35 + 0.55 * padded[i]),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _BottomButton extends StatelessWidget {
+  const _BottomButton({required this.label, required this.onTap, this.icon, this.filled = false});
+
+  final String label;
+  final VoidCallback? onTap;
+  final IconData? icon;
+  final bool filled;
+
+  @override
+  Widget build(BuildContext context) {
+    final sb = context.sb;
+    final fg = filled ? sb.onPrimary : sb.text;
+    return Semantics(
+      button: true,
+      enabled: onTap != null,
+      label: label,
+      excludeSemantics: true,
+      child: Opacity(
+        opacity: onTap == null ? 0.45 : 1,
+        child: SbPressable(
+          onTap: onTap,
+          child: Container(
+            height: 56,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(color: filled ? sb.primary : sb.fill, borderRadius: BorderRadius.circular(99)),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (icon != null) ...[Icon(icon, size: 18, color: fg), const SizedBox(width: 8)],
+                Text(
+                  label,
+                  style: TextStyle(fontSize: 16, height: 22 / 16, fontWeight: FontWeight.w600, color: fg),
                 ),
               ],
             ),

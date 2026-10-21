@@ -23,6 +23,15 @@ void main() {
       expect(result.reminderDate, DateTime(2026, 10, 2, 14, 30));
     });
 
+    test('reads what the contact promised, and copes when it is missing', () {
+      final result = AiResponseParser.parse(
+        '{"summary": "S", "actionItems": ["Send numbers"], "theirItems": ["Signed offer"], "reminder": null}',
+      );
+      expect(result.actionItems, ['Send numbers']);
+      expect(result.theirItems, ['Signed offer']);
+      expect(AiResponseParser.parse('{"summary": "S", "actionItems": [], "reminder": null}').theirItems, isEmpty);
+    });
+
     test('strips markdown code fences and surrounding text', () {
       const raw = 'Here you go:\n```json\n{"summary": "Short", "actionItems": [], "reminder": null}\n```';
 

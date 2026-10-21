@@ -173,6 +173,10 @@ class AiService {
             'type': 'array',
             'items': {'type': 'string'},
           },
+          'theirItems': {
+            'type': 'array',
+            'items': {'type': 'string'},
+          },
           'reminder': {
             'type': 'object',
             'properties': {
@@ -184,7 +188,7 @@ class AiService {
             'additionalProperties': false,
           },
         },
-        'required': ['summary', 'actionItems', 'reminder'],
+        'required': ['summary', 'actionItems', 'theirItems', 'reminder'],
         'additionalProperties': false,
       },
     },
@@ -199,6 +203,7 @@ Respond ONLY with a JSON object in this exact format:
 {
   "summary": "1-3 sentence factual summary of the NOTE",
   "actionItems": ["Specific task 1", "Specific task 2"],
+  "theirItems": ["Thing the contact will send or do"],
   "reminder": {
     "title": "Short reminder title",
     "suggestedDate": "YYYY-MM-DD",
@@ -209,7 +214,8 @@ Respond ONLY with a JSON object in this exact format:
 RULES:
 - Summarize and extract ONLY from the NOTE. The BACKGROUND section is older context: never summarize it, never copy facts or tasks from it into your answer.
 - Never invent details that are not in the NOTE. If the note is very short, the summary is one sentence restating it.
-- Each action item is one clear task taken from the NOTE. No tasks in the note → empty array.
+- actionItems = what the USER (the person writing the note) has to do or send. Each is one clear task taken from the NOTE. None → empty array.
+- theirItems = what the CONTACT promised to do or send to the user ("she'll send the signed offer" → "Signed offer"). Short, from the NOTE only. None → empty array. Never put the same thing in both lists.
 - Do not repeat tasks listed under EXISTING PENDING TASKS.
 - reminder = the most important follow-up in the NOTE. Resolve relative dates ("tomorrow", "Monday next week", "in 3 days") using the CALENDAR provided — pick the exact date from that list. "Next week <day>" / "<day> next week" means that weekday in the following calendar week.
 - If the note gives no time, use 09:00. If nothing needs a follow-up, set all three reminder fields to empty strings.

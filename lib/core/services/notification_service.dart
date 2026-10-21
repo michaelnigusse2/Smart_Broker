@@ -110,6 +110,10 @@ class NotificationService {
   }
 
   Future<void> _onResponse(NotificationResponse response) async {
+    // The moments marked during the call, read before the call leaves the
+    // wrap-up list, so the note screen can show them.
+    final callId = response.payload == null ? null : Uri.tryParse(response.payload!)?.queryParameters['callId'];
+    final wrapUp = callId == null ? null : await WrapUpStore.find(callId);
     if (await handleAction(response)) return;
     if (response.payload != null && response.payload!.startsWith('/add-note')) {
       // A note already written in the call overlay goes straight to AI Review.
@@ -134,6 +138,7 @@ class NotificationService {
             'contactId': contactId,
             'isPostCall': true,
             'duration': duration,
+            'marks': wrapUp?.marks ?? const [],
           },
         );
       }
