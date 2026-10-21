@@ -10,13 +10,12 @@ class DayLabels {
   /// Whole calendar days from [from] to [to] (negative when [to] is earlier).
   static int daysBetween(DateTime from, DateTime to) => (_day(to).difference(_day(from)).inHours / 24).round();
 
-  /// When something is due: "Today", "Tomorrow", "Fri" within the week,
-  /// otherwise "28 Oct".
+  /// When something is due: "Today", then the weekday ("Thu") within the
+  /// week, otherwise "28 Oct".
   static String due(DateTime due, DateTime now) {
     final days = daysBetween(now, due);
     if (days == 0) return 'Today';
-    if (days == 1) return 'Tomorrow';
-    if (days > 1 && days < 7) return DateFormat('EEE').format(due);
+    if (days > 0 && days < 7) return DateFormat('EEE').format(due);
     return DateFormat('d MMM').format(due);
   }
 

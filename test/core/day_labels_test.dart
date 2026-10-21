@@ -11,7 +11,7 @@ final _now = DateTime(2026, 10, 21, 10, 10);
 void main() {
   test('due dates read as the boards write them', () {
     expect(DayLabels.due(DateTime(2026, 10, 21, 17), _now), 'Today');
-    expect(DayLabels.due(DateTime(2026, 10, 22, 9), _now), 'Tomorrow');
+    expect(DayLabels.due(DateTime(2026, 10, 22, 9), _now), 'Thu');
     expect(DayLabels.due(DateTime(2026, 10, 23), _now), 'Fri');
     expect(DayLabels.due(DateTime(2026, 10, 26), _now), 'Mon');
     expect(DayLabels.due(DateTime(2026, 10, 28), _now), '28 Oct');

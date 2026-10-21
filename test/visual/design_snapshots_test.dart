@@ -15,6 +15,7 @@ import 'package:smart_broker/features/contacts/screens/contact_detail_screen.dar
 import 'package:smart_broker/features/contacts/screens/contacts_screen.dart';
 import 'package:smart_broker/features/onboarding/screens/onboarding_screen.dart';
 import 'package:smart_broker/features/today/screens/today_screen.dart';
+import 'package:smart_broker/features/todos/screens/tasks_screen.dart';
 import 'package:smart_broker/models/note.dart';
 import 'package:smart_broker/models/todo_item.dart';
 
@@ -231,6 +232,42 @@ Future<String> _seedBoardPerson() async {
   return selam.id;
 }
 
+/// The promises on the Promises board: five you owe, three owed to you.
+Future<void> _seedBoardPromises() async {
+  var number = 200;
+  Future<String> person(String id, String name) async =>
+      (await insertContact(id: id, name: name, phone: '+251 911 000 ${number++}')).id;
+  final hanna = await person('c-hanna', 'Hanna Girma');
+  final dawit = await person('c-dawit', 'Dawit Alemu');
+  final selam = await person('c-selam', 'Selam Tesfaye');
+  final yonas = await person('c-yonas', 'Yonas Bekele');
+  final lidet = await person('c-lidet', 'ልደት መኮንን');
+  final abebe = await person('c-abebe', 'Abebe Kebede');
+  final meron = await person('c-meron', 'Meron Haile');
+  final todos = TodoRepository();
+  for (final (contactId, title, due, owedBy) in [
+    (hanna, 'Contract draft', DateTime(2026, 10, 19, 23, 59), OwedBy.me),
+    (dawit, 'Payment terms', DateTime(2026, 10, 22, 23, 59), OwedBy.me),
+    (selam, '3-year numbers', DateTime(2026, 10, 23, 23, 59), OwedBy.me),
+    (yonas, 'Board deck', DateTime(2026, 10, 23, 23, 59), OwedBy.me),
+    (lidet, 'Office shortlist', DateTime(2026, 10, 28, 23, 59), OwedBy.me),
+    (selam, 'Signed offer', DateTime(2026, 10, 26, 23, 59), OwedBy.them),
+    (abebe, 'Title deed copy', DateTime(2026, 10, 24, 23, 59), OwedBy.them),
+    (meron, 'Budget sign-off', DateTime(2026, 11, 4, 23, 59), OwedBy.them),
+  ]) {
+    await todos.insert(
+      TodoItem(
+        id: '',
+        contactId: contactId,
+        title: title,
+        createdAt: DateTime(2026, 10, 15),
+        dueAt: due,
+        owedBy: owedBy,
+      ),
+    );
+  }
+}
+
 void main() {
   setUpAll(_loadFonts);
   setUp(() async {
@@ -256,6 +293,12 @@ void main() {
     final id = await tester.runAsync(_seedBoardPerson);
     await _pump(tester, ContactDetailScreen(clock: _tenPast10), arguments: id);
     await _snap(tester, 'person');
+  });
+
+  testWidgets('Promises, as on the board', (tester) async {
+    await tester.runAsync(_seedBoardPromises);
+    await _pump(tester, TasksScreen(clock: _tenPast10));
+    await _snap(tester, 'promises');
   });
 
   testWidgets('Onboarding steps, as on the boards', (tester) async {

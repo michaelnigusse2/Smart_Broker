@@ -1,503 +1,624 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+
 import '../../../core/constants/app_routes.dart';
-import '../../../core/repositories/todo_repository.dart';
 import '../../../core/repositories/contact_repository.dart';
+import '../../../core/repositories/todo_repository.dart';
+import '../../../core/services/app_log.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/todo_tile.dart';
+import '../../../core/theme/sb_widgets.dart';
+import '../../../core/utils/day_labels.dart';
+import '../../../core/widgets/constrained_layout.dart';
 import '../../../models/todo_item.dart';
 import '../../../models/todo_with_contact.dart';
+import '../../home/screens/main_shell.dart';
+import '../widgets/promise_sheet.dart';
 
+/// The Promises tab, built to the "Espresso · final" Promises board: what
+/// you owe and what's owed to you, each grouped into Late, This week and
+/// Later, with a circle to tick each one off.
 class TasksScreen extends StatefulWidget {
-  const TasksScreen({super.key});
+  const TasksScreen({super.key, this.clock});
+
+  /// Fixed "now" for tests.
+  final DateTime Function()? clock;
 
   @override
   State<TasksScreen> createState() => _TasksScreenState();
 }
 
 class _TasksScreenState extends State<TasksScreen> {
-  final TodoRepository _todoRepo = TodoRepository();
-  final ContactRepository _contactRepo = ContactRepository();
+  final _todoRepo = TodoRepository();
 
-  List<TodoWithContact> _todos = [];
-  bool _isLoading = true;
+  List<TodoWithContact> _all = [];
+  OwedBy _side = OwedBy.me;
+  bool _loading = true;
+  bool _failed = false;
+  bool _showDone = false;
 
-  TaskFilter _activeFilter = TaskFilter.all;
-  TaskSort _activeSort = TaskSort.createdAt;
-
-  bool _isBulkMode = false;
-  final Set<String> _selectedIds = {};
+  DateTime get _now => widget.clock?.call() ?? DateTime.now();
 
   @override
   void initState() {
     super.initState();
-    _loadTodos();
+    MainShell.currentTab.addListener(_onTabChanged);
+    _load();
   }
-
-  Future<void> _loadTodos() async {
-    if (!mounted) return;
-    setState(() => _isLoading = true);
-    final filter = _activeFilter;
-    final sort = _activeSort;
-    final todos = await _todoRepo.getAll(filter: filter, sortBy: sort);
-    // Ignore results of a query that the user has already switched away from.
-    if (mounted && filter == _activeFilter && sort == _activeSort) {
-      setState(() {
-        _todos = todos;
-        _isLoading = false;
-      });
-    }
-  }
-
-  void _toggleFilter(TaskFilter filter) {
-    if (_activeFilter == filter) return;
-    setState(() {
-      _activeFilter = filter;
-      _isBulkMode = false;
-      _selectedIds.clear();
-    });
-    _loadTodos();
-  }
-
-  void _toggleSort() {
-    setState(() {
-      _activeSort = _activeSort == TaskSort.createdAt ? TaskSort.contact : TaskSort.createdAt;
-    });
-    _loadTodos();
-  }
-
-  void _toggleSelection(String id) {
-    setState(() {
-      if (_selectedIds.contains(id)) {
-        _selectedIds.remove(id);
-        if (_selectedIds.isEmpty) _isBulkMode = false;
-      } else {
-        _selectedIds.add(id);
-      }
-    });
-  }
-
-  Future<void> _bulkDelete() async {
-    final ids = _selectedIds.toList();
-    setState(() {
-      _isBulkMode = false;
-      _selectedIds.clear();
-    });
-    for (var id in ids) {
-      await _todoRepo.delete(id);
-    }
-    _loadTodos();
-  }
-
-  Future<void> _bulkComplete() async {
-    final ids = _selectedIds.toList();
-    setState(() {
-      _isBulkMode = false;
-      _selectedIds.clear();
-    });
-    for (var id in ids) {
-      await _todoRepo.setCompleted(id, true);
-    }
-    _loadTodos();
-  }
-
-  Future<void> _handleDelete(TodoWithContact item) async {
-    final todoItem = item.todo;
-    await _todoRepo.delete(todoItem.id);
-    if (!mounted) return;
-
-    // Optimistic UI update
-    setState(() {
-      _todos.removeWhere((t) => t.id == todoItem.id);
-    });
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).clearSnackBars();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Task deleted'),
-          duration: const Duration(seconds: 5),
-          action: SnackBarAction(
-            label: 'Undo',
-            onPressed: () async {
-              // Re-insert with the original ID
-              await _todoRepo.insert(todoItem);
-              _loadTodos();
-            },
-          ),
-        ),
-      );
-    }
-  }
-
-  void _showAddTaskSheet() async {
-    final contacts = await _contactRepo.getAll();
-    if (!mounted) return;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
-      ),
-      builder: (context) {
-        return _AddTaskSheet(
-          contacts: contacts,
-          onSave: (todo) async {
-            await _todoRepo.insert(todo);
-            _loadTodos();
-          },
-        );
-      },
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: _isBulkMode ? _buildBulkAppBar() : _buildNormalAppBar(),
-      body: Column(
-        children: [
-          _buildFilterBar(),
-          _buildSortBar(),
-          Expanded(
-            child: _isLoading ? const Center(child: CircularProgressIndicator()) : _buildList(),
-          ),
-        ],
-      ),
-    );
-  }
-
-  PreferredSizeWidget _buildNormalAppBar() {
-    return AppBar(
-      title: const Text('Promises'),
-      // The add button lives in the bar: the bottom corner belongs to the
-      // shell's capture button.
-      actions: [
-        Padding(
-          padding: const EdgeInsets.only(right: AppSpacing.md),
-          child: IconButton.filled(
-            onPressed: _showAddTaskSheet,
-            tooltip: 'Add a promise',
-            // The bar's own icon colour would otherwise win over the button's.
-            icon: const Icon(LucideIcons.plus, color: Colors.white),
-          ),
-        ),
-      ],
-    );
-  }
-
-  PreferredSizeWidget _buildBulkAppBar() {
-    return AppBar(
-      backgroundColor: AppColors.primary,
-      foregroundColor: Colors.white,
-      leading: IconButton(
-        icon: const Icon(LucideIcons.x),
-        onPressed: () {
-          setState(() {
-            _isBulkMode = false;
-            _selectedIds.clear();
-          });
-        },
-      ),
-      title: Text('${_selectedIds.length} selected'),
-      actions: [
-        IconButton(
-          icon: const Icon(LucideIcons.checkSquare),
-          onPressed: _bulkComplete,
-          tooltip: 'Toggle Status',
-        ),
-        IconButton(
-          icon: const Icon(LucideIcons.trash2),
-          onPressed: _bulkDelete,
-          tooltip: 'Delete',
-        ),
-      ],
-    );
-  }
-
-  Widget _buildFilterBar() {
-    return Container(
-      height: 60,
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: AppColors.border)),
-      ),
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-        children: [
-          _buildFilterChip('All', TaskFilter.all),
-          const SizedBox(width: AppSpacing.sm),
-          _buildFilterChip('Pending', TaskFilter.pending),
-          const SizedBox(width: AppSpacing.sm),
-          _buildFilterChip('Completed', TaskFilter.completed),
-          const SizedBox(width: AppSpacing.sm),
-          _buildFilterChip('Overdue', TaskFilter.overdue),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFilterChip(String label, TaskFilter filterValue) {
-    final isActive = _activeFilter == filterValue;
-    return ChoiceChip(
-      label: Text(label),
-      selected: isActive,
-      onSelected: (selected) {
-        if (selected) _toggleFilter(filterValue);
-      },
-      selectedColor: AppColors.primary.withValues(alpha: 0.1),
-      backgroundColor: Colors.white,
-      labelStyle: TextStyle(
-        color: isActive ? AppColors.primary : AppColors.textSecondary,
-        fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
-      ),
-      side: BorderSide(
-        color: isActive ? AppColors.primary : AppColors.border,
-      ),
-    );
-  }
-
-  Widget _buildSortBar() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            '${_todos.length} Tasks',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppColors.textSecondary),
-          ),
-          TextButton.icon(
-            onPressed: _toggleSort,
-            icon: const Icon(LucideIcons.arrowDownWideNarrow, size: 16, color: AppColors.textSecondary),
-            label: Text(
-              'Sort: ${_activeSort == TaskSort.createdAt ? 'Newest' : 'Contact'}',
-              style: const TextStyle(color: AppColors.textSecondary),
-            ),
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-              minimumSize: Size.zero,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildList() {
-    if (_todos.isEmpty) {
-      return Center(
-        child: Text(
-          'No tasks found.',
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: AppColors.textSecondary),
-        ),
-      );
-    }
-
-    if (_activeFilter == TaskFilter.all) {
-      final pending = _todos.where((t) => !t.isCompleted).toList();
-      final completed = _todos.where((t) => t.isCompleted).toList();
-
-      return ListView(
-        padding: _listPadding,
-        children: [
-          if (pending.isNotEmpty) ...[
-            _buildSectionHeader('${pending.length} Pending'),
-            ...pending.map((t) => _buildTodoTile(t)),
-          ],
-          if (completed.isNotEmpty) ...[
-            const SizedBox(height: AppSpacing.lg),
-            _buildSectionHeader('${completed.length} Completed'),
-            ...completed.map((t) => _buildTodoTile(t)),
-          ],
-        ],
-      );
-    }
-
-    return ListView.builder(
-      padding: _listPadding,
-      itemCount: _todos.length,
-      itemBuilder: (context, index) {
-        return _buildTodoTile(_todos[index]);
-      },
-    );
-  }
-
-  /// Extra bottom space so the last task can scroll clear of the add button.
-  static const _listPadding = EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.md, AppSpacing.md, 96);
-
-  Widget _buildSectionHeader(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-      child: Text(
-        title,
-        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-          color: AppColors.textSecondary,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTodoTile(TodoWithContact item) {
-    final todo = item.todo;
-
-    // Relative time logic (simplistic for now)
-    final diff = DateTime.now().difference(todo.createdAt);
-    String timeStr;
-    if (diff.inDays > 0) {
-      timeStr = '${diff.inDays}d ago';
-    } else if (diff.inHours > 0) {
-      timeStr = '${diff.inHours}h ago';
-    } else if (diff.inMinutes > 0) {
-      timeStr = '${diff.inMinutes}m ago';
-    } else {
-      timeStr = 'Just now';
-    }
-
-    final tile = TodoTile(
-      todo: todo,
-      subtitleText: '${item.contactName} • $timeStr',
-      isBulkMode: _isBulkMode,
-      isSelected: _selectedIds.contains(todo.id),
-      onTapSubtitle: () async {
-        await Navigator.pushNamed(
-          context,
-          AppRoutes.contactDetail,
-          arguments: todo.contactId,
-        );
-        _loadTodos(); // reload on return
-      },
-      onChanged: (val) {
-        if (_isBulkMode) {
-          _toggleSelection(todo.id);
-        } else {
-          _todoRepo.toggleCompleted(todo.id).then((_) => _loadTodos());
-        }
-      },
-      onEdit: (newTitle) {
-        _todoRepo.update(todo.copyWith(title: newTitle)).then((_) => _loadTodos());
-      },
-      onDelete: () => _handleDelete(item),
-    );
-
-    return GestureDetector(
-      onLongPress: () {
-        if (!_isBulkMode) {
-          setState(() {
-            _isBulkMode = true;
-            _selectedIds.add(todo.id);
-          });
-        }
-      },
-      child: Dismissible(
-        key: Key(todo.id),
-        direction: _isBulkMode ? DismissDirection.none : DismissDirection.endToStart,
-        background: Container(
-          alignment: Alignment.centerRight,
-          padding: const EdgeInsets.only(right: AppSpacing.md),
-          color: AppColors.error,
-          child: const Icon(LucideIcons.trash2, color: Colors.white),
-        ),
-        onDismissed: (direction) {
-          _handleDelete(item);
-        },
-        child: tile,
-      ),
-    );
-  }
-}
-
-class _AddTaskSheet extends StatefulWidget {
-  final List<dynamic> contacts; // Actually List<Contact> but keeping dynamic for fast typing since we know the model
-  final Function(TodoItem) onSave;
-
-  const _AddTaskSheet({required this.contacts, required this.onSave});
-
-  @override
-  State<_AddTaskSheet> createState() => _AddTaskSheetState();
-}
-
-class _AddTaskSheetState extends State<_AddTaskSheet> {
-  final _controller = TextEditingController();
-  String? _selectedContactId;
 
   @override
   void dispose() {
-    _controller.dispose();
+    MainShell.currentTab.removeListener(_onTabChanged);
     super.dispose();
+  }
+
+  void _onTabChanged() {
+    if (MainShell.currentTab.value == MainShell.promisesTab) _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final all = await _todoRepo.getAll();
+      if (!mounted) return;
+      setState(() {
+        _all = all;
+        _loading = false;
+        _failed = false;
+      });
+    } catch (e, st) {
+      AppLog.e('Promises', 'could not load promises', e, st);
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _failed = true;
+        });
+      }
+    }
+  }
+
+  void _snack(String message, {SnackBarAction? action}) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.clearSnackBars();
+    messenger.showSnackBar(SnackBar(content: Text(message), action: action));
+  }
+
+  Future<void> _add() async {
+    final contacts = await ContactRepository().getAll();
+    if (!mounted) return;
+    if (contacts.isEmpty) {
+      _snack('Add a person first');
+      return;
+    }
+    contacts.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    final promise = await showPromiseSheet(context, contacts: contacts);
+    if (promise == null) return;
+    await _todoRepo.insert(promise);
+    if (mounted && promise.owedBy != _side) setState(() => _side = promise.owedBy);
+    _load();
+  }
+
+  Future<void> _toggleDone(TodoWithContact item) async {
+    await _todoRepo.toggleCompleted(item.id);
+    _load();
+    if (!mounted || item.isCompleted) return;
+    _snack(
+      'Marked done',
+      action: SnackBarAction(
+        label: 'Undo',
+        onPressed: () async {
+          await _todoRepo.toggleCompleted(item.id);
+          _load();
+        },
+      ),
+    );
+  }
+
+  Future<void> _openPerson(TodoWithContact item) async {
+    await Navigator.pushNamed(context, AppRoutes.contactDetail, arguments: item.contactId);
+    if (mounted) _load();
+  }
+
+  Future<void> _actions(TodoWithContact item) async {
+    final sb = context.sb;
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      useSafeArea: true,
+      backgroundColor: sb.canvas,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl))),
+      builder: (ctx) => _ActionsSheet(title: item.title),
+    );
+    if (!mounted || action == null) return;
+    if (action == 'person') return _openPerson(item);
+    if (action == 'edit') {
+      final contacts = await ContactRepository().getAll();
+      if (!mounted) return;
+      final changed = await showPromiseSheet(context, contacts: contacts, editing: item.todo);
+      if (changed == null) return;
+      await _todoRepo.update(changed);
+      _load();
+      return;
+    }
+    await _todoRepo.delete(item.id);
+    _load();
+    _snack(
+      'Promise deleted',
+      action: SnackBarAction(
+        label: 'Undo',
+        onPressed: () async {
+          await _todoRepo.insert(item.todo);
+          _load();
+        },
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
-        left: AppSpacing.md,
-        right: AppSpacing.md,
-        top: AppSpacing.md,
-      ),
-      child: SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('New Task', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: AppSpacing.md),
-            TextField(
-              controller: _controller,
-              autofocus: true,
-              textCapitalization: TextCapitalization.sentences,
-              decoration: const InputDecoration(
-                hintText: 'What needs to be done?',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            DropdownButtonFormField<String>(
-              decoration: const InputDecoration(
-                labelText: 'Contact',
-                border: OutlineInputBorder(),
-              ),
-              initialValue: _selectedContactId,
-              items: widget.contacts.map((c) {
-                return DropdownMenuItem<String>(
-                  value: c.id,
-                  child: Text(c.name),
-                );
-              }).toList(),
-              onChanged: (val) => setState(() => _selectedContactId = val),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            ElevatedButton(
-              onPressed: _selectedContactId == null
-                  ? null
-                  : () {
-                      if (_controller.text.trim().isEmpty) return;
-
-                      final todo = TodoItem(
-                        id: '',
-                        contactId: _selectedContactId!,
-                        title: _controller.text.trim(),
-                        isCompleted: false,
-                        createdAt: DateTime.now(),
-                      );
-                      widget.onSave(todo);
-                      Navigator.pop(context);
-                    },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
-              ),
-              child: const Text('Save Task'),
-            ),
-            const SizedBox(height: AppSpacing.md),
-          ],
+    if (_loading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (_failed) {
+      return Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text("Couldn't load promises", style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 12),
+              FilledButton(onPressed: _load, child: const Text('Try again')),
+            ],
+          ),
         ),
+      );
+    }
+
+    final now = _now;
+    final open = _all.where((t) => !t.isCompleted);
+    final mineCount = open.where((t) => t.todo.owedBy == OwedBy.me).length;
+    final theirsCount = open.where((t) => t.todo.owedBy == OwedBy.them).length;
+    final side = open.where((t) => t.todo.owedBy == _side).toList()
+      ..sort((a, b) => (a.todo.dueAt ?? DateTime(9999)).compareTo(b.todo.dueAt ?? DateTime(9999)));
+    final done = _all.where((t) => t.isCompleted && t.todo.owedBy == _side).toList()
+      ..sort((a, b) => (b.completedAt ?? b.createdAt).compareTo(a.completedAt ?? a.createdAt));
+
+    final late = <TodoWithContact>[];
+    final week = <TodoWithContact>[];
+    final later = <TodoWithContact>[];
+    final anytime = <TodoWithContact>[];
+    for (final item in side) {
+      final due = item.todo.dueAt;
+      if (due == null) {
+        anytime.add(item);
+      } else if (due.isBefore(now)) {
+        late.add(item);
+      } else if (DayLabels.daysBetween(now, due) < 7) {
+        week.add(item);
+      } else {
+        later.add(item);
+      }
+    }
+
+    final groups = [
+      (label: 'Late', items: late, isLate: true),
+      (label: 'This week', items: week, isLate: false),
+      (label: 'Later', items: later, isLate: false),
+      (label: 'Any time', items: anytime, isLate: false),
+    ].where((g) => g.items.isNotEmpty).toList();
+
+    final sb = context.sb;
+    var delay = 0;
+    Duration nextDelay() => Duration(milliseconds: (delay++ * 80).clamp(0, 240));
+
+    return Scaffold(
+      body: SafeArea(
+        bottom: false,
+        child: ConstrainedLayout(
+          child: RefreshIndicator(
+            color: sb.primary,
+            onRefresh: _load,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 128),
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Semantics(
+                          header: true,
+                          child: Text('Promises', style: Theme.of(context).textTheme.headlineLarge),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      SbCircleButton(icon: LucideIcons.plus, tooltip: 'Add a promise', onPressed: _add, filled: true),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
+                SbRise(
+                  delay: nextDelay(),
+                  child: _SideSwitch(
+                    side: _side,
+                    mine: mineCount,
+                    theirs: theirsCount,
+                    onChanged: (side) => setState(() {
+                      _side = side;
+                      _showDone = false;
+                    }),
+                  ),
+                ),
+                if (groups.isEmpty) ...[
+                  const SizedBox(height: 22),
+                  _Nothing(side: _side),
+                ],
+                for (final group in groups) ...[
+                  const SizedBox(height: 22),
+                  SbCap(group.label, color: group.isLate ? sb.late : null),
+                  SbRise(
+                    delay: nextDelay(),
+                    child: SbCard(
+                      child: Column(
+                        children: [
+                          for (var i = 0; i < group.items.length; i++)
+                            _PromiseRow(
+                              item: group.items[i],
+                              side: _side,
+                              now: now,
+                              first: i == 0,
+                              onOpen: () => _openPerson(group.items[i]),
+                              onLongPress: () => _actions(group.items[i]),
+                              onDone: () => _toggleDone(group.items[i]),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+                if (done.isNotEmpty) ...[
+                  const SizedBox(height: 14),
+                  Center(
+                    child: TextButton(
+                      onPressed: () => setState(() => _showDone = !_showDone),
+                      child: Text(_showDone ? 'Hide done' : 'Show done · ${done.length}'),
+                    ),
+                  ),
+                  if (_showDone)
+                    SbCard(
+                      child: Column(
+                        children: [
+                          for (var i = 0; i < done.length; i++)
+                            _PromiseRow(
+                              item: done[i],
+                              side: _side,
+                              now: now,
+                              first: i == 0,
+                              onOpen: () => _openPerson(done[i]),
+                              onLongPress: () => _actions(done[i]),
+                              onDone: () => _toggleDone(done[i]),
+                            ),
+                        ],
+                      ),
+                    ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// "You owe 5 | Owed to you 3" in a pill; the chosen side is espresso.
+class _SideSwitch extends StatelessWidget {
+  const _SideSwitch({required this.side, required this.mine, required this.theirs, required this.onChanged});
+
+  final OwedBy side;
+  final int mine;
+  final int theirs;
+  final ValueChanged<OwedBy> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final sb = context.sb;
+    Widget tab(OwedBy value, String label, int count) {
+      final selected = side == value;
+      final style = TextStyle(
+        fontSize: 15,
+        height: 20 / 15,
+        fontWeight: FontWeight.w600,
+        color: selected ? sb.onPrimary : sb.text2,
+        fontFeatures: const [FontFeature.tabularFigures()],
+      );
+      return Expanded(
+        child: Semantics(
+          button: true,
+          selected: selected,
+          label: '$label, $count',
+          excludeSemantics: true,
+          child: SbPressable(
+            onTap: () => onChanged(value),
+            child: Container(
+              height: 42,
+              alignment: Alignment.center,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              decoration: BoxDecoration(color: selected ? sb.primary : null, borderRadius: BorderRadius.circular(99)),
+              child: Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(text: '$label '),
+                    TextSpan(
+                      text: '$count',
+                      style: TextStyle(color: selected ? sb.onPrimary.withValues(alpha: 0.7) : sb.text2),
+                    ),
+                  ],
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: style,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return SbCard(
+      radius: 999,
+      padding: const EdgeInsets.all(4),
+      child: Row(
+        children: [
+          tab(OwedBy.me, 'You owe', mine),
+          const SizedBox(width: 4),
+          tab(OwedBy.them, 'Owed to you', theirs),
+        ],
+      ),
+    );
+  }
+}
+
+/// Face, what was promised and to (or from) whom, when, and the done circle.
+class _PromiseRow extends StatelessWidget {
+  const _PromiseRow({
+    required this.item,
+    required this.side,
+    required this.now,
+    required this.first,
+    required this.onOpen,
+    required this.onLongPress,
+    required this.onDone,
+  });
+
+  final TodoWithContact item;
+  final OwedBy side;
+  final DateTime now;
+  final bool first;
+  final VoidCallback onOpen;
+  final VoidCallback onLongPress;
+  final VoidCallback onDone;
+
+  @override
+  Widget build(BuildContext context) {
+    final sb = context.sb;
+    final firstName = item.contactName.trim().split(RegExp(r'\s+')).first;
+    final who = side == OwedBy.me ? 'to $firstName' : 'from $firstName';
+    final due = item.todo.dueAt;
+    final done = item.isCompleted;
+    final late = !done && due != null && due.isBefore(now);
+    final when = due == null ? '' : (late ? DayLabels.late(due, now) : DayLabels.due(due, now));
+    return Container(
+      constraints: BoxConstraints(minHeight: first ? 66 : 67),
+      decoration: first
+          ? null
+          : BoxDecoration(
+              border: Border(top: BorderSide(color: sb.fill)),
+            ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Semantics(
+              button: true,
+              label: '${item.title}, $who${when.isEmpty ? '' : ', $when'}',
+              hint: 'Opens $firstName. Long-press to change or delete.',
+              excludeSemantics: true,
+              child: InkWell(
+                onTap: onOpen,
+                onLongPress: onLongPress,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 66),
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 16),
+                    child: Row(
+                      children: [
+                        SbFace(name: item.contactName, size: 40),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  item.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    height: 22 / 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: done ? sb.text3 : sb.text,
+                                    decoration: done ? TextDecoration.lineThrough : null,
+                                  ),
+                                ),
+                                Text(
+                                  who,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(fontSize: 13, height: 18 / 13, color: sb.text2),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        if (when.isNotEmpty && !done) ...[
+                          const SizedBox(width: 12),
+                          Text(
+                            when,
+                            style: TextStyle(
+                              fontSize: 13,
+                              height: 18 / 13,
+                              fontWeight: FontWeight.w700,
+                              color: late ? sb.late : sb.text2,
+                              fontFeatures: const [FontFeature.tabularFigures()],
+                            ),
+                          ),
+                        ],
+                        const SizedBox(width: 12),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Semantics(
+            button: true,
+            label: done ? 'Mark not done: ${item.title}' : 'Mark done: ${item.title}',
+            excludeSemantics: true,
+            child: InkResponse(
+              onTap: onDone,
+              radius: 22,
+              child: SizedBox(
+                width: 44,
+                height: 44,
+                child: Center(
+                  child: Container(
+                    width: 24,
+                    height: 24,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: done ? sb.primary : null,
+                      border: done ? null : Border.all(color: sb.track, width: 2),
+                    ),
+                    child: done ? Icon(LucideIcons.check, size: 14, color: sb.onPrimary) : null,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
+    );
+  }
+}
+
+class _Nothing extends StatelessWidget {
+  const _Nothing({required this.side});
+
+  final OwedBy side;
+
+  @override
+  Widget build(BuildContext context) {
+    final sb = context.sb;
+    final text = Theme.of(context).textTheme;
+    return SbCard(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(color: sb.fill, borderRadius: BorderRadius.circular(12)),
+            child: Icon(LucideIcons.arrowLeftRight, size: 20, color: sb.text2),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  side == OwedBy.me ? 'Nothing you owe' : 'No one owes you',
+                  style: text.titleSmall?.copyWith(fontSize: 16),
+                ),
+                Text('Promises from your notes land here', style: text.bodySmall),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActionsSheet extends StatelessWidget {
+  const _ActionsSheet({required this.title});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    final sb = context.sb;
+    final actions = [
+      (id: 'person', icon: LucideIcons.user, label: 'Open person', danger: false),
+      (id: 'edit', icon: LucideIcons.pencil, label: 'Change', danger: false),
+      (id: 'delete', icon: LucideIcons.trash2, label: 'Delete', danger: true),
+    ];
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Center(
+            child: Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(color: sb.track, borderRadius: BorderRadius.circular(99)),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 16, 4, 10),
+            child: Text(
+              title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+          ),
+          SbCard(
+            child: Column(
+              children: [
+                for (var i = 0; i < actions.length; i++)
+                  InkWell(
+                    onTap: () => Navigator.pop(context, actions[i].id),
+                    child: Container(
+                      constraints: const BoxConstraints(minHeight: 56),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      decoration: i == 0
+                          ? null
+                          : BoxDecoration(
+                              border: Border(top: BorderSide(color: sb.fill)),
+                            ),
+                      child: Row(
+                        children: [
+                          Icon(actions[i].icon, size: 20, color: actions[i].danger ? sb.late : sb.text),
+                          const SizedBox(width: 14),
+                          Text(
+                            actions[i].label,
+                            style: TextStyle(
+                              fontSize: 16,
+                              height: 22 / 16,
+                              fontWeight: FontWeight.w600,
+                              color: actions[i].danger ? sb.late : sb.text,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
