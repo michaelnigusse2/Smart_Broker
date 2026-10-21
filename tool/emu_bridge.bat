@@ -42,6 +42,7 @@ goto loop
 
 :handle
 set "CMD=" & set "P1=" & set "P2=" & set "P3=" & set "P4="
+if not defined SEL set "SEL=-e"
 for /f "tokens=1-5" %%a in ("!LINE!") do (
   set "CMD=%%a"
   set "P1=%%b"
@@ -65,24 +66,26 @@ if /i "!CMD!"=="storage" goto do_storage
 if /i "!CMD!"=="reinstall" goto do_reinstall
 if /i "!CMD!"=="devices" goto do_devices
 if /i "!CMD!"=="scribe"  goto do_scribe
+if /i "!CMD!"=="target"  goto do_target
+if /i "!CMD!"=="phonemodel" goto do_phonemodel
 call :done "ignored"
 exit /b 0
 
 :do_screen
-"%ADB%" -e exec-out screencap -p > build_logs\screen.png 2>> "%LOG%"
+"%ADB%" !SEL! exec-out screencap -p > build_logs\screen.png 2>> "%LOG%"
 call :done "screen"
 exit /b 0
 
 :do_dump
-"%ADB%" -e shell uiautomator dump /sdcard/sb_ui.xml >> "%LOG%" 2>&1
-"%ADB%" -e pull /sdcard/sb_ui.xml build_logs\ui.xml >> "%LOG%" 2>&1
+"%ADB%" !SEL! shell uiautomator dump /sdcard/sb_ui.xml >> "%LOG%" 2>&1
+"%ADB%" !SEL! pull /sdcard/sb_ui.xml build_logs\ui.xml >> "%LOG%" 2>&1
 call :done "dump"
 exit /b 0
 
 :do_tap
 call :num "!P1!" || exit /b 0
 call :num "!P2!" || exit /b 0
-"%ADB%" -e shell input tap !P1! !P2! >> "%LOG%" 2>&1
+"%ADB%" !SEL! shell input tap !P1! !P2! >> "%LOG%" 2>&1
 call :done "tap"
 exit /b 0
 
@@ -91,14 +94,14 @@ call :num "!P1!" || exit /b 0
 call :num "!P2!" || exit /b 0
 call :num "!P3!" || exit /b 0
 call :num "!P4!" || exit /b 0
-"%ADB%" -e shell input swipe !P1! !P2! !P3! !P4! 300 >> "%LOG%" 2>&1
+"%ADB%" !SEL! shell input swipe !P1! !P2! !P3! !P4! 300 >> "%LOG%" 2>&1
 call :done "swipe"
 exit /b 0
 
 :do_text
 if "!P1!"=="" (call :done "bad text" & exit /b 0)
 echo(!P1!| findstr /r /x "[A-Za-z0-9+@.]*" >nul || (call :done "bad text" & exit /b 0)
-"%ADB%" -e shell input text !P1! >> "%LOG%" 2>&1
+"%ADB%" !SEL! shell input text !P1! >> "%LOG%" 2>&1
 call :done "text"
 exit /b 0
 
@@ -110,31 +113,33 @@ if /i "!P1!"=="enter" set "CODE=66"
 if /i "!P1!"=="space" set "CODE=62"
 if /i "!P1!"=="del"   set "CODE=67"
 if not defined CODE (call :done "bad key" & exit /b 0)
-"%ADB%" -e shell input keyevent !CODE! >> "%LOG%" 2>&1
+"%ADB%" !SEL! shell input keyevent !CODE! >> "%LOG%" 2>&1
 call :done "key"
 exit /b 0
 
 :do_launch
-"%ADB%" -e shell monkey -p com.smartbroker.smart_broker -c android.intent.category.LAUNCHER 1 >nul 2>> "%LOG%"
+"%ADB%" !SEL! shell monkey -p com.smartbroker.smart_broker -c android.intent.category.LAUNCHER 1 >nul 2>> "%LOG%"
 call :done "launch"
 exit /b 0
 
 :do_install
-"%ADB%" -e install -r "%APK%" >> "%LOG%" 2>&1
-if errorlevel 1 (
+"%ADB%" !SEL! install -r "%APK%" >> "%LOG%" 2>&1
+rem Clearing caches is only done on the emulator, never on a phone.
+if errorlevel 1 if "!SEL!"=="-e" (
   echo install failed, clearing emulator caches and retrying>> "%LOG%"
-  "%ADB%" -e shell pm trim-caches 64G >> "%LOG%" 2>&1
-  "%ADB%" -e install -r "%APK%" >> "%LOG%" 2>&1
+  "%ADB%" !SEL! shell pm trim-caches 64G >> "%LOG%" 2>&1
+  "%ADB%" !SEL! install -r "%APK%" >> "%LOG%" 2>&1
 )
-"%ADB%" -e shell monkey -p com.smartbroker.smart_broker -c android.intent.category.LAUNCHER 1 >nul 2>> "%LOG%"
+"%ADB%" !SEL! shell monkey -p com.smartbroker.smart_broker -c android.intent.category.LAUNCHER 1 >nul 2>> "%LOG%"
 call :done "install"
 exit /b 0
 
 :do_reinstall
 rem Removes SmartBroker and its data from the emulator first (frees space).
-"%ADB%" -e uninstall com.smartbroker.smart_broker >> "%LOG%" 2>&1
-"%ADB%" -e install "%APK%" >> "%LOG%" 2>&1
-"%ADB%" -e shell monkey -p com.smartbroker.smart_broker -c android.intent.category.LAUNCHER 1 >nul 2>> "%LOG%"
+if not "!SEL!"=="-e" (call :done "reinstall is emulator-only" & exit /b 0)
+"%ADB%" !SEL! uninstall com.smartbroker.smart_broker >> "%LOG%" 2>&1
+"%ADB%" !SEL! install "%APK%" >> "%LOG%" 2>&1
+"%ADB%" !SEL! shell monkey -p com.smartbroker.smart_broker -c android.intent.category.LAUNCHER 1 >nul 2>> "%LOG%"
 call :done "reinstall"
 exit /b 0
 
@@ -167,6 +172,27 @@ echo finished %date% %time%>> "!OUT!"
 call :done "scribe"
 exit /b 0
 
+:do_target
+rem "target phone" sends the following commands to the phone (USB or wireless
+rem debugging), "target emu" back to the emulator.
+if /i "!P1!"=="emu" (set "SEL=-e" & call :done "target emu" & exit /b 0)
+if /i "!P1!"=="phone" (
+  set "SEL="
+  call :find_phone
+  if not defined SEL (set "SEL=-e" & call :done "no phone" & exit /b 0)
+  call :done "target phone"
+  exit /b 0
+)
+call :done "bad target"
+exit /b 0
+
+:do_phonemodel
+rem Debug builds only: copies the model pushed by "scribe phone" into the app's
+rem files, instead of downloading it again in the app.
+"%ADB%" !SEL! shell "run-as com.smartbroker.smart_broker sh -c 'mkdir -p files/scribe && cp /data/local/tmp/scribe/addis-scribe-rnnt-q5_k.gguf files/scribe/ && ls -l files/scribe'" >> "%LOG%" 2>&1
+call :done "phonemodel"
+exit /b 0
+
 :find_phone
 rem First connected device that is not the emulator (USB or wireless debugging).
 set "PHONE="
@@ -179,8 +205,8 @@ if defined PHONE set "SEL=-s !PHONE!"
 exit /b 0
 
 :do_logcat
-"%ADB%" -e logcat -d -v time -s flutter:V AndroidRuntime:E > build_logs\logcat.txt 2>> "%LOG%"
-"%ADB%" -e logcat -c >> "%LOG%" 2>&1
+"%ADB%" !SEL! logcat -d -v time -s flutter:V AndroidRuntime:E > build_logs\logcat.txt 2>> "%LOG%"
+"%ADB%" !SEL! logcat -c >> "%LOG%" 2>&1
 call :done "logcat"
 exit /b 0
 
@@ -188,23 +214,23 @@ exit /b 0
 set "OK="
 for %%v in (0.85 1.0 1.15 1.3 1.5) do if "!P1!"=="%%v" set "OK=1"
 if not defined OK (call :done "bad font" & exit /b 0)
-"%ADB%" -e shell settings put system font_scale !P1! >> "%LOG%" 2>&1
+"%ADB%" !SEL! shell settings put system font_scale !P1! >> "%LOG%" 2>&1
 call :done "font"
 exit /b 0
 
 :do_density
 if /i "!P1!"=="reset" (
-  "%ADB%" -e shell wm density reset >> "%LOG%" 2>&1
+  "%ADB%" !SEL! shell wm density reset >> "%LOG%" 2>&1
   call :done "density"
   exit /b 0
 )
 call :num "!P1!" || exit /b 0
-"%ADB%" -e shell wm density !P1! >> "%LOG%" 2>&1
+"%ADB%" !SEL! shell wm density !P1! >> "%LOG%" 2>&1
 call :done "density"
 exit /b 0
 
 :do_storage
-"%ADB%" -e shell df -h /data > build_logs\storage.txt 2>> "%LOG%"
+"%ADB%" !SEL! shell df -h /data > build_logs\storage.txt 2>> "%LOG%"
 call :done "storage"
 exit /b 0
 

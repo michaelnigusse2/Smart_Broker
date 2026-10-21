@@ -19,6 +19,7 @@ import '../../../core/services/call_detection_service.dart';
 import '../../../core/services/call_matching_service.dart';
 import '../../../core/services/settings_service.dart';
 import '../../../models/call_entry.dart';
+import '../widgets/offline_dictation_settings.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -467,6 +468,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
               trailing: const Icon(LucideIcons.chevronRight, size: 20),
               onTap: () => showAiDataNotice(context, _provider),
             ),
+            const Divider(height: 1),
+
+            // ── Offline dictation ───────────────────────────────────
+            _buildSectionHeader(context, 'Offline Amharic dictation'),
+            const OfflineDictationSettings(),
             const Divider(height: 1),
 
             // ── Call Detection Section ──────────────────────────────

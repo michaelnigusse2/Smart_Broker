@@ -6,6 +6,9 @@ import '../../../core/widgets/constrained_layout.dart';
 import '../../../models/note.dart';
 import '../../../core/repositories/note_repository.dart';
 import '../../../core/services/overlay_draft_service.dart';
+import '../../../core/transcription/dictation_controller.dart';
+import '../../../core/transcription/offline_transcriber.dart';
+import '../widgets/dictation_panel.dart';
 
 class AddNoteScreen extends StatefulWidget {
   const AddNoteScreen({super.key});
@@ -30,6 +33,17 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
 
   /// The text as last saved, to tell whether closing would lose edits.
   String? _savedText;
+
+  /// Offline Amharic dictation; null on phones without the native library.
+  DictationController? _dictation;
+
+  @override
+  void initState() {
+    super.initState();
+    if (OfflineTranscriber.isSupported) {
+      _dictation = DictationController()..addListener(_onDictationChanged);
+    }
+  }
 
   @override
   void didChangeDependencies() {
@@ -69,8 +83,76 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
 
   @override
   void dispose() {
+    _dictation?.removeListener(_onDictationChanged);
+    _dictation?.dispose();
     _noteController.dispose();
     super.dispose();
+  }
+
+  // ── Dictation ────────────────────────────────────────────────────────
+
+  Future<void> _startDictation() async {
+    FocusScope.of(context).unfocus(); // room for the live text
+    await _dictation?.start();
+  }
+
+  Future<void> _finishDictation() async {
+    final text = await _dictation?.stop() ?? '';
+    if (!mounted) return;
+    if (text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No speech was recognised')));
+      return;
+    }
+    _insertAtCursor(text);
+  }
+
+  void _onDictationChanged() {
+    final d = _dictation;
+    if (d == null || !mounted) return;
+    setState(() {});
+    if (d.state == DictationState.needsModel) {
+      d.reset();
+      _offerModelDownload();
+    } else if (d.state == DictationState.error) {
+      final message = d.error ?? 'Dictation stopped.';
+      d.reset();
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    }
+  }
+
+  Future<void> _offerModelDownload() async {
+    final open = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Download the Amharic model?'),
+        content: const Text(
+          'Dictation runs on this phone, so your notes are never uploaded. It needs a one-time '
+          '499 MB download — best over Wi-Fi.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Not now')),
+          ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Open Settings')),
+        ],
+      ),
+    );
+    if (open == true && mounted) await Navigator.pushNamed(context, AppRoutes.settings);
+  }
+
+  /// Puts dictated text where the cursor is (or at the end), with spaces around it.
+  void _insertAtCursor(String text) {
+    final value = _noteController.value;
+    final sel = value.selection;
+    final start = sel.isValid ? sel.start : value.text.length;
+    final end = sel.isValid ? sel.end : value.text.length;
+    final before = value.text.substring(0, start);
+    final after = value.text.substring(end);
+    final lead = before.isEmpty || before.endsWith(' ') || before.endsWith('\n') ? '' : ' ';
+    final trail = after.isEmpty || after.startsWith(' ') || after.startsWith('\n') ? '' : ' ';
+    final inserted = '$lead$text$trail';
+    _noteController.value = TextEditingValue(
+      text: '$before$inserted$after',
+      selection: TextSelection.collapsed(offset: before.length + inserted.length),
+    );
   }
 
   /// Saves the raw note before anything else, so it survives no key, no
@@ -119,6 +201,8 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
 
   /// Closing with unsaved text keeps it as a draft instead of losing it.
   Future<void> _close() async {
+    if (_dictation?.state == DictationState.listening) await _finishDictation();
+    if (!mounted) return;
     final text = _noteController.text.trim();
     final unsaved = text.isNotEmpty && text != (_savedText ?? _note?.rawText);
     if (unsaved && _contactId != null) {
@@ -147,6 +231,19 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
       },
       child: Scaffold(
         backgroundColor: AppColors.surface, // Distraction free pure white
+        floatingActionButton: _dictation == null || _dictation!.isActive
+            ? null
+            : FloatingActionButton.extended(
+                onPressed: _isSaving ? null : _startDictation,
+                tooltip: 'Dictate in Amharic (works offline)',
+                backgroundColor: AppColors.textPrimary,
+                foregroundColor: Colors.white,
+                icon: const Icon(LucideIcons.mic),
+                label: const Text('Dictate'),
+              ),
+        bottomNavigationBar: _dictation != null && _dictation!.isActive
+            ? DictationPanel(controller: _dictation!, onDone: _finishDictation, onCancel: () => _dictation!.cancel())
+            : null,
         appBar: AppBar(
           backgroundColor: AppColors.surface,
           elevation: 0,
@@ -246,7 +343,8 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
                       enabledBorder: InputBorder.none,
                       focusedBorder: InputBorder.none,
                       filled: false,
-                      contentPadding: EdgeInsets.zero,
+                      // Room below the last line for the Dictate button.
+                      contentPadding: EdgeInsets.only(bottom: _dictation == null ? 0 : 72),
                     ),
                   ),
                 ),

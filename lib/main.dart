@@ -15,6 +15,7 @@ import 'core/services/call_overlay_state.dart';
 import 'core/services/notification_service.dart';
 import 'core/services/settings_service.dart';
 import 'core/theme/app_theme.dart';
+import 'core/transcription/licences.dart';
 import 'features/calendar/screens/reminder_detail_screen.dart';
 import 'features/calls/screens/call_overlay_screen.dart';
 import 'features/contacts/screens/contact_detail_screen.dart';
@@ -68,6 +69,7 @@ Future<Object?> _initialise() async {
   }
   await _nonFatal('notifications', () => NotificationService().init());
   await _nonFatal('reminder rescheduling', () => NotificationService().rescheduleAll());
+  registerDictationLicences();
   _listenToOverlayOnce();
   await _restoreCallDetection();
   return null;

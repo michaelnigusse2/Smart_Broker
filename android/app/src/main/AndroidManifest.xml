@@ -17,6 +17,8 @@
     <!-- Live call overlay (flutter_overlay_window) -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- Offline Amharic dictation: audio is transcribed on the phone and never uploaded. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <application
         android:label="SmartBroker"
         android:name="${applicationName}"

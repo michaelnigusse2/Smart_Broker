@@ -31,6 +31,10 @@ to take notes while the conversation is still fresh.
 - **Contact detail** — notes timeline, tasks, call history, reminders.
 - **Notes → AI Review** — write a note, the AI proposes a summary, action items and a
   reminder; edit anything and save it to the contact.
+- **Offline Amharic dictation (Android, 64-bit)** — tap **Dictate** in a note and speak; text
+  appears live and spoken numbers become digits. Runs Addis AI's Addis Scribe model on the
+  phone with NVIDIA NeMo-Speech.cpp, so audio never leaves the device. The model (499 MB) is
+  downloaded once in **Settings → Offline Amharic dictation** (resumable, SHA-256 checked).
 - **Tasks** — all tasks across contacts with filters, sorting and bulk actions.
 - **Calendar** — month view with reminder dots, reminder detail/edit, local notifications.
 - **Call detection (Android)** — foreground service watches call state, reads the call
@@ -71,7 +75,8 @@ Providers are defined in `lib/core/services/ai_provider.dart`.
 | Notifications | `flutter_local_notifications`, `timezone`, `flutter_timezone` |
 | Contacts | `flutter_contacts` |
 | Call overlay | `flutter_overlay_window` |
-| Native | Kotlin `CallDetectionService` + `CallDetectionPlugin` (Method/Event channels) |
+| Native | Kotlin `CallDetectionService` + `CallDetectionPlugin` (Method/Event channels), `DictationAudioPlugin` (microphone PCM) |
+| Speech | NeMo-Speech.cpp + ggml in `android/app/src/main/jniLibs/` (built by `tool/scribe/build_android.sh`), called with `dart:ffi` from a background isolate |
 | UI | `google_fonts` (Inter), `lucide_icons`, `table_calendar`, `intl` |
 | State | Local `StatefulWidget` + repositories |
 
@@ -89,6 +94,8 @@ lib/
 │   ├── services/             # AI, API keys, settings, notifications, contacts merge,
 │   │                         #   call detection/matching, overlay drafts
 │   ├── theme/                # AppTheme, AppColors, AppSpacing, AppRadius
+│   ├── transcription/        # Offline dictation: FFI bindings, isolate, model download,
+│   │                         #   Amharic number normalisation
 │   └── widgets/              # Shared UI components
 ├── features/
 │   ├── calendar/             # Calendar, reminder detail
@@ -100,7 +107,8 @@ lib/
 │   └── todos/                # Tasks
 ├── mock/                     # Demo data used by SeedData on first launch
 └── models/                   # Domain models
-android/app/src/main/kotlin/… # CallDetectionService.kt, CallDetectionPlugin.kt
+android/app/src/main/kotlin/… # CallDetectionService.kt, CallDetectionPlugin.kt, DictationAudioPlugin.kt
+android/app/src/main/jniLibs/ # Speech runtime .so files (arm64-v8a, x86_64)
 test/                         # Unit + repository tests (in-memory SQLite via sqflite_common_ffi)
 ```
 
@@ -180,6 +188,9 @@ Release builds and signing: see [docs/RELEASE.md](docs/RELEASE.md).
   By default the live overlay and the post-call prompt only appear for numbers that are
   already contacts (Settings → Live call overlay: Contacts / All calls / Off).
 - The home greeting name is hardcoded.
+- Offline dictation: English words come out in Amharic letters and there is no punctuation;
+  32-bit phones aren't supported; it uses about 0.7 GB of memory while listening and has
+  only been tested on a Galaxy S20 Ultra.
 
 ---
 

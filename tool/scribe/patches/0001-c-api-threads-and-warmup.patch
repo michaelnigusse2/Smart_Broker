@@ -1,0 +1,55 @@
+diff --git a/include/nemo_speech/asr.h b/include/nemo_speech/asr.h
+index 70ceace..092b171 100644
+--- a/include/nemo_speech/asr.h
++++ b/include/nemo_speech/asr.h
+@@ -58,6 +58,7 @@ typedef enum nemo_speech_asr_decoder_kind {
+ typedef struct nemo_speech_asr_backend_config {
+     size_t size;
+     int32_t gpu;  // -1 = CPU
++    int32_t threads;  // CPU backend threads; 0 = min(8, hardware threads)
+ } nemo_speech_asr_backend_config;
+ 
+ typedef struct nemo_speech_asr_model_config {
+@@ -203,6 +204,12 @@ NEMO_SPEECH_ASR_API nemo_speech_asr_status nemo_speech_asr_create(
+ 
+ NEMO_SPEECH_ASR_API void nemo_speech_asr_destroy(nemo_speech_asr_recognizer* recognizer);
+ 
++// Runs a few seconds of silence through the model so the first real request
++// does not pay for graph building and weight repacking (several seconds on a
++// phone). Optional; the CLI does the same before its first request.
++NEMO_SPEECH_ASR_API nemo_speech_asr_status
++nemo_speech_asr_warmup(nemo_speech_asr_recognizer* recognizer);
++
+ // Offline (proto: Recognize): decode a whole utterance. `samples` is mono
+ // float32. Rates from 8-96 kHz are resampled to the model rate; 0 means the
+ // samples are already at the model rate.
+diff --git a/src/asr/c_api.cpp b/src/asr/c_api.cpp
+index 1ea3997..d9c0bfd 100644
+--- a/src/asr/c_api.cpp
++++ b/src/asr/c_api.cpp
+@@ -68,6 +68,8 @@ to_config(const nemo_speech_asr_recognizer_config* c) {
+         const auto* b = c->backend;
+         if (HAS_FIELD(b, nemo_speech_asr_backend_config, gpu))
+             cfg.backend.gpu = b->gpu;
++        if (HAS_FIELD(b, nemo_speech_asr_backend_config, threads))
++            cfg.backend.threads = b->threads;
+     }
+     if (HAS_FIELD(c, nemo_speech_asr_recognizer_config, model) && c->model) {
+         const auto* m = c->model;
+@@ -295,6 +297,16 @@ nemo_speech_asr_destroy(nemo_speech_asr_recognizer* recognizer) {
+     delete recognizer;
+ }
+ 
++nemo_speech_asr_status
++nemo_speech_asr_warmup(nemo_speech_asr_recognizer* recognizer) {
++    if (!recognizer || !recognizer->impl)
++        return NEMO_SPEECH_ASR_ERROR_INVALID_ARGUMENT;
++    return guard([&] {
++        recognizer->impl->warmup();
++        return NEMO_SPEECH_ASR_OK;
++    });
++}
++
+ nemo_speech_asr_status
+ nemo_speech_asr_recognize_f32(
+     nemo_speech_asr_recognizer* recognizer, const nemo_speech_asr_recognition_options* options,
