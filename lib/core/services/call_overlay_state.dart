@@ -39,6 +39,32 @@ class CallOverlayState {
 
   static Future<void> clear() => _prefs.remove(_stateKey);
 
+  // ── Call placed from the app ───────────────────────────────────
+  //
+  // Android doesn't tell us the number of an outgoing call until it's in the
+  // call log, so the Call buttons note who they dial; the call that starts
+  // within two minutes is taken to be that one.
+
+  static const _expectedKey = 'expected_outgoing_call';
+
+  static Future<void> expectOutgoing(String number) =>
+      _prefs.setString(_expectedKey, jsonEncode({'number': number, 'at': DateTime.now().millisecondsSinceEpoch}));
+
+  /// The number dialled from the app in the last two minutes, if any (once).
+  static Future<String?> takeExpectedOutgoing() async {
+    final raw = await _prefs.getString(_expectedKey);
+    if (raw == null) return null;
+    await _prefs.remove(_expectedKey);
+    try {
+      final data = Map<String, dynamic>.from(jsonDecode(raw) as Map);
+      final at = DateTime.fromMillisecondsSinceEpoch(data['at'] as int);
+      if (DateTime.now().difference(at) > const Duration(minutes: 2)) return null;
+      return data['number'] as String?;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Drops the current-call state and any note waiting for AI review.
   static Future<void> clearAll() async {
     await _prefs.remove(_stateKey);

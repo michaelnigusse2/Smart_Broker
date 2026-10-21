@@ -1,5 +1,7 @@
 import 'package:flutter/services.dart';
 
+import 'call_overlay_state.dart';
+
 /// Opens the phone's dialer with a number filled in. The person presses the
 /// green button themselves, so the app needs no extra calling permission.
 class PhoneDialer {
@@ -9,6 +11,8 @@ class PhoneDialer {
     final trimmed = number.trim();
     if (trimmed.isEmpty) return false;
     try {
+      // So the call overlay knows who this outgoing call is with.
+      await CallOverlayState.expectOutgoing(trimmed);
       return await _channel.invokeMethod<bool>('dial', {'number': trimmed}) ?? false;
     } on PlatformException {
       return false;

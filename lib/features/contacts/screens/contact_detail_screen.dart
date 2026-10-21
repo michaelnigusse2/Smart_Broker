@@ -802,20 +802,13 @@ Future<String?> _showActions(
     backgroundColor: sb.canvas,
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl))),
     builder: (ctx) => Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Center(
-            child: Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(color: sb.track, borderRadius: BorderRadius.circular(99)),
-            ),
-          ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(4, 16, 4, 10),
+            padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
             child: Text(
               title,
               maxLines: 2,
@@ -886,17 +879,10 @@ class _CallHistorySheet extends StatelessWidget {
       maxChildSize: 0.95,
       builder: (ctx, controller) => ListView(
         controller: controller,
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
         children: [
-          Center(
-            child: Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(color: sb.track, borderRadius: BorderRadius.circular(99)),
-            ),
-          ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(4, 16, 4, 10),
+            padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
             child: Text('Call history', style: Theme.of(ctx).textTheme.titleMedium),
           ),
           if (calls.isEmpty)

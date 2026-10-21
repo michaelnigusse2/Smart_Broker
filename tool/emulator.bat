@@ -9,6 +9,8 @@ rem Progress is also written to build_logs\emulator.log.
 rem Build the APK first (dev runner "build" action, or flutter build apk --debug).
 rem ---------------------------------------------------------------------------
 setlocal
+rem The emulator by its serial: "adb -e" means "the TCP device", which is the
+rem phone when it is connected over wireless debugging.
 cd /d "%~dp0.."
 if not exist build_logs mkdir build_logs
 set "LOG=build_logs\emulator.log"
@@ -23,7 +25,7 @@ if not exist "%ADB%" (call :say "adb not found at %ADB%" & goto fail)
 if not exist "%EMU%" (call :say "emulator not found at %EMU%" & goto fail)
 if not exist "%APK%" (call :say "No debug APK yet - build it first" & goto fail)
 
-"%ADB%" -e get-state >nul 2>&1
+"%ADB%" -s emulator-5554 get-state >nul 2>&1
 if not errorlevel 1 (
   call :say "Emulator already running"
   goto wait_boot
@@ -37,18 +39,18 @@ start "Android Emulator" "%EMU%" -avd "%AVD%"
 
 :wait_boot
 call :say "Waiting for the emulator to boot..."
-"%ADB%" -e wait-for-device
+"%ADB%" -s emulator-5554 wait-for-device
 :boot_loop
 set "BOOTED="
-for /f "usebackq delims=" %%b in (`"%ADB%" -e shell getprop sys.boot_completed 2^>nul`) do set "BOOTED=%%b"
+for /f "usebackq delims=" %%b in (`"%ADB%" -s emulator-5554 shell getprop sys.boot_completed 2^>nul`) do set "BOOTED=%%b"
 if not "%BOOTED%"=="1" (
   timeout /t 3 /nobreak >nul
   goto boot_loop
 )
 call :say "Booted. Installing SmartBroker..."
-"%ADB%" -e install -r "%APK%" >> "%LOG%" 2>&1
+"%ADB%" -s emulator-5554 install -r "%APK%" >> "%LOG%" 2>&1
 if errorlevel 1 (call :say "Install failed - see %LOG%" & goto fail)
-"%ADB%" -e shell monkey -p com.smartbroker.smart_broker -c android.intent.category.LAUNCHER 1 >> "%LOG%" 2>&1
+"%ADB%" -s emulator-5554 shell monkey -p com.smartbroker.smart_broker -c android.intent.category.LAUNCHER 1 >> "%LOG%" 2>&1
 call :say "SmartBroker is open on the emulator."
 >> "%LOG%" echo result=ok
 echo finished=%date% %time%>> "%LOG%"

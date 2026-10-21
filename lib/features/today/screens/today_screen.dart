@@ -10,6 +10,7 @@ import '../../../core/repositories/todo_repository.dart';
 import '../../../core/services/app_log.dart';
 import '../../../core/services/phone_dialer.dart';
 import '../../../core/services/profile_service.dart';
+import '../../../core/services/wrap_up_store.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/sb_widgets.dart';
 import '../../../core/utils/ethiopian_date.dart';
@@ -45,6 +46,9 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
   /// Open promises you owe.
   List<TodoItem> _pending = [];
   int _notesToFinish = 0;
+
+  /// Calls you said "Not now" to after they ended.
+  List<WrapUp> _wrapUps = [];
   bool _loading = true;
   bool _failed = false;
 
@@ -80,6 +84,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
       final reminders = await ReminderRepository().getOpen();
       final todos = await TodoRepository().getPending();
       final notes = await NoteRepository().counts();
+      final wrapUps = await WrapUpStore.all();
       final now = _now;
       // Anything that started in the last five minutes still counts as next.
       final cutoff = now.subtract(const Duration(minutes: 5));
@@ -93,6 +98,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
         // Today is about what you owe; what others owe you lives on Promises.
         _pending = todos.where((t) => t.owedBy == OwedBy.me).toList();
         _notesToFinish = notes.unprocessed;
+        _wrapUps = wrapUps;
         _loading = false;
         _failed = false;
       });
@@ -110,6 +116,35 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
   Future<void> _open(String route, {Object? arguments}) async {
     await Navigator.of(context).pushNamed(route, arguments: arguments);
     if (mounted) _load();
+  }
+
+  /// One call: straight to its note. Several: pick one, or settle them.
+  Future<void> _wrapUpCalls() async {
+    final wrapUps = _wrapUps;
+    if (wrapUps.isEmpty) return;
+    final chosen = wrapUps.length == 1
+        ? wrapUps.first
+        : await showModalBottomSheet<WrapUp>(
+            context: context,
+            useSafeArea: true,
+            backgroundColor: context.sb.canvas,
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
+            ),
+            builder: (_) => _WrapUpSheet(
+              wrapUps: wrapUps,
+              onSettled: (w) async {
+                await WrapUpStore.remove(w.callId);
+                _load();
+              },
+            ),
+          );
+    if (chosen == null || !mounted) return;
+    await WrapUpStore.remove(chosen.callId);
+    await _open(
+      AppRoutes.addNote,
+      arguments: {'contactId': chosen.contactId, 'isPostCall': true, 'duration': chosen.length},
+    );
   }
 
   Future<void> _call(Contact contact) async {
@@ -188,13 +223,21 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
                 SbRise(
                   child: _Headline(things: _upcoming.length, due: _dueCount),
                 ),
-                if (_notesToFinish > 0) ...[
+                if (_wrapUps.isNotEmpty || _notesToFinish > 0) ...[
                   const SizedBox(height: 14),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 4),
                     child: Align(
                       alignment: Alignment.centerLeft,
-                      child: _WrapUpTag(count: _notesToFinish, onTap: () => _open(AppRoutes.notesList)),
+                      child: _wrapUps.isNotEmpty
+                          ? _WrapUpTag(
+                              label: '${_wrapUps.length} ${_wrapUps.length == 1 ? 'call' : 'calls'} to wrap up',
+                              onTap: _wrapUpCalls,
+                            )
+                          : _WrapUpTag(
+                              label: '$_notesToFinish ${_notesToFinish == 1 ? 'note' : 'notes'} to wrap up',
+                              onTap: () => _open(AppRoutes.notesList),
+                            ),
                     ),
                   ),
                 ],
@@ -351,15 +394,14 @@ class _Headline extends StatelessWidget {
 
 /// The caramel pill under the headline: 36 high, mic, label, chevron.
 class _WrapUpTag extends StatelessWidget {
-  const _WrapUpTag({required this.count, required this.onTap});
+  const _WrapUpTag({required this.label, required this.onTap});
 
-  final int count;
+  final String label;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final sb = context.sb;
-    final label = '$count ${count == 1 ? 'note' : 'notes'} to wrap up';
     return Semantics(
       button: true,
       label: label,
@@ -856,6 +898,99 @@ class _WaitingOnYou extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// The calls waiting to be wrapped up: tap one to add its note, or tick it
+/// off as settled.
+class _WrapUpSheet extends StatefulWidget {
+  const _WrapUpSheet({required this.wrapUps, required this.onSettled});
+
+  final List<WrapUp> wrapUps;
+  final ValueChanged<WrapUp> onSettled;
+
+  @override
+  State<_WrapUpSheet> createState() => _WrapUpSheetState();
+}
+
+class _WrapUpSheetState extends State<_WrapUpSheet> {
+  late final List<WrapUp> _left = [...widget.wrapUps];
+
+  @override
+  Widget build(BuildContext context) {
+    final sb = context.sb;
+    final use24h = MediaQuery.alwaysUse24HourFormatOf(context);
+    final time = use24h ? DateFormat('EEE HH:mm') : DateFormat('EEE h:mm a');
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
+            child: Text('Calls to wrap up', style: Theme.of(context).textTheme.titleMedium),
+          ),
+          SbCard(
+            child: Column(
+              children: [
+                for (var i = 0; i < _left.length; i++)
+                  InkWell(
+                    onTap: () => Navigator.pop(context, _left[i]),
+                    child: Container(
+                      constraints: const BoxConstraints(minHeight: 64),
+                      padding: const EdgeInsets.only(left: 16, right: 4),
+                      decoration: i == 0
+                          ? null
+                          : BoxDecoration(
+                              border: Border(top: BorderSide(color: sb.fill)),
+                            ),
+                      child: Row(
+                        children: [
+                          SbFace(name: _left[i].name, size: 40),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _left[i].name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    height: 22 / 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: sb.text,
+                                  ),
+                                ),
+                                Text(
+                                  '${time.format(_left[i].at)} · ${_left[i].length}',
+                                  style: TextStyle(fontSize: 13, height: 18 / 13, color: sb.text2),
+                                ),
+                              ],
+                            ),
+                          ),
+                          TextButton.icon(
+                            onPressed: () {
+                              final settled = _left[i];
+                              widget.onSettled(settled);
+                              setState(() => _left.removeAt(i));
+                              if (_left.isEmpty) Navigator.pop(context);
+                            },
+                            icon: Icon(LucideIcons.check, size: 16, color: sb.goodFg),
+                            label: Text('Settled', style: TextStyle(color: sb.goodFg)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

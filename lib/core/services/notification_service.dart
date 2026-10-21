@@ -1,3 +1,5 @@
+import 'dart:ui' show DartPluginRegistrant;
+
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
@@ -11,6 +13,15 @@ import '../constants/app_routes.dart';
 import 'call_overlay_state.dart';
 import 'app_log.dart';
 import '../utils/reminder_time.dart';
+import 'wrap_up_store.dart';
+
+/// Handles the after-call notification's buttons while the app isn't open.
+/// Runs in its own isolate, so it only touches storage.
+@pragma('vm:entry-point')
+Future<void> onNotificationActionInBackground(NotificationResponse response) async {
+  DartPluginRegistrant.ensureInitialized();
+  await NotificationService.handleAction(response);
+}
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
@@ -59,6 +70,7 @@ class NotificationService {
         iOS: darwinSettings,
       ),
       onDidReceiveNotificationResponse: _onResponse,
+      onDidReceiveBackgroundNotificationResponse: onNotificationActionInBackground,
     );
 
     // 5. Request Android 13+ runtime notification permission
@@ -78,7 +90,27 @@ class NotificationService {
     _initialized = true;
   }
 
+  /// The after-call notification's buttons. "Settled" and "Add note" take
+  /// the call off the wrap-up list; "Not now" leaves it there for Today.
+  /// Returns true when the response needs nothing more (no screen to open).
+  static Future<bool> handleAction(NotificationResponse response) async {
+    final payload = response.payload;
+    if (payload == null || !payload.startsWith('/add-note')) return false;
+    final callId = Uri.parse(payload).queryParameters['callId'];
+    switch (response.actionId) {
+      case 'settled':
+        if (callId != null) await WrapUpStore.remove(callId);
+        return true;
+      case 'later':
+        return true;
+      default:
+        if (callId != null) await WrapUpStore.remove(callId);
+        return false;
+    }
+  }
+
   Future<void> _onResponse(NotificationResponse response) async {
+    if (await handleAction(response)) return;
     if (response.payload != null && response.payload!.startsWith('/add-note')) {
       // A note already written in the call overlay goes straight to AI Review.
       final pending = await CallOverlayState.takePendingReview();
@@ -108,31 +140,47 @@ class NotificationService {
     }
   }
 
-  /// Shows an immediate local notification after a phone call ends.
-  Future<void> showPostCallPrompt(Contact contact, CallEntry call) async {
+  /// The one quiet notification after a call (the "Espresso · final"
+  /// after-call board): "Call with Selam · 6:42", what you owe and how many
+  /// moments you marked, and Settled / Add note / Not now. Silent: it shows
+  /// at the top without a sound or buzz.
+  Future<void> showPostCallPrompt(Contact contact, CallEntry call, {String owe = '', int marks = 0}) async {
     const notificationDetails = NotificationDetails(
       android: AndroidNotificationDetails(
-        'post_call_prompts',
-        'Post-Call Prompts',
-        channelDescription: 'Prompts to add notes after phone calls',
+        'after_call',
+        'After calls',
+        channelDescription: 'One silent note after each call, to wrap it up',
         importance: Importance.high,
         priority: Priority.high,
+        playSound: false,
+        enableVibration: false,
+        category: AndroidNotificationCategory.reminder,
+        actions: [
+          AndroidNotificationAction('settled', 'Settled', cancelNotification: true),
+          AndroidNotificationAction('note', 'Add note', showsUserInterface: true, cancelNotification: true),
+          AndroidNotificationAction('later', 'Not now', cancelNotification: true),
+        ],
       ),
-      iOS: DarwinNotificationDetails(
-        presentAlert: true,
-        presentBadge: true,
-        presentSound: true,
-      ),
+      iOS: DarwinNotificationDetails(presentAlert: true, presentSound: false),
     );
 
-    final durationStr = '${call.duration.inMinutes}m ${call.duration.inSeconds % 60}s';
+    final seconds = call.duration.inSeconds;
+    final length = '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
+    final first = contact.name.trim().split(RegExp(r'\s+')).first;
+    final body = [
+      if (owe.isNotEmpty) 'You owe: $owe',
+      if (marks > 0) '$marks ${marks == 1 ? 'mark' : 'marks'}',
+    ].join(' · ');
 
     await _plugin.show(
       id: stableNotificationId('call:${call.id}'),
-      title: 'Call with ${contact.name}',
-      body: 'Tap to add a note about this call ($durationStr)',
+      title: 'Call with $first · $length',
+      body: body.isEmpty ? 'Add a note, or mark it settled' : body,
       notificationDetails: notificationDetails,
-      payload: '/add-note?contactId=${contact.id}&duration=$durationStr',
+      payload: Uri(
+        path: '/add-note',
+        queryParameters: {'contactId': contact.id, 'duration': length, 'callId': call.id},
+      ).toString(),
     );
   }
 

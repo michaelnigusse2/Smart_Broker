@@ -130,19 +130,11 @@ class _PromiseSheetState extends State<_PromiseSheet> {
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
       child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Center(
-              child: Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(color: sb.track, borderRadius: BorderRadius.circular(99)),
-              ),
-            ),
-            const SizedBox(height: 18),
             Text(widget.editing == null ? 'New promise' : 'Change promise', style: text.headlineSmall),
             const SizedBox(height: 16),
             _Segmented(

@@ -7,6 +7,7 @@ import '../../models/call_entry.dart';
 import '../../models/call_event.dart';
 import '../../models/contact.dart';
 import '../../models/phone_contact.dart';
+import '../../models/todo_item.dart';
 import '../repositories/call_repository.dart';
 import '../repositories/contact_repository.dart';
 import '../repositories/note_repository.dart';
@@ -17,6 +18,7 @@ import 'call_overlay_state.dart';
 import 'notification_service.dart';
 import 'overlay_gateway.dart';
 import 'settings_service.dart';
+import 'wrap_up_store.dart';
 
 /// Whether the live overlay should be visible for a call.
 ///
@@ -164,9 +166,11 @@ class CallMatchingService {
         await _startOverlay(phase: 'ringing', number: hasNumber ? number : null);
       case 'offhook':
         if (!_callInProgress) {
-          // Outgoing call (or we missed the ringing event).
+          // Outgoing call (or we missed the ringing event). A call placed
+          // from the app's Call button tells us who it's with.
           _callInProgress = true;
-          await _startOverlay(phase: 'active', number: hasNumber ? number : null);
+          final expected = hasNumber ? null : await CallOverlayState.takeExpectedOutgoing();
+          await _startOverlay(phase: 'active', number: hasNumber ? number : expected);
         } else {
           final updated = await _updateOverlay({
             'phase': 'active',
@@ -230,11 +234,13 @@ class CallMatchingService {
       AppLog.d(_tag, 'overlay not shown (mode ${mode.name}, ${number == null ? 'number unknown' : 'unknown caller'})');
       return;
     }
+    // The person tapped "Hide" on the ringing card: stay away for this call.
+    if (state['hidden'] == true) return;
     if (!await overlay.isPermissionGranted()) return;
     try {
       if (!await overlay.isActive()) {
-        // Top half of the screen: leaves the dialer's buttons usable and
-        // room below for the keyboard.
+        // Just the ringing card at the top; the overlay then fits the window
+        // to whatever it shows, so the phone's own buttons stay free.
         await overlay.show(heightPx: _overlayHeightPx());
       }
       await _notifyOverlay();
@@ -253,10 +259,12 @@ class CallMatchingService {
     return top > 0 ? top : 28;
   }
 
+  /// About the ringing card's height (status bar, margin, card, shadow).
   int _overlayHeightPx() {
     final views = WidgetsBinding.instance.platformDispatcher.views;
-    if (views.isEmpty) return 1200;
-    return (views.first.physicalSize.height * 0.5).round();
+    if (views.isEmpty) return 600;
+    final view = views.first;
+    return ((_statusBarHeight() + 12 + 156 + 16) * view.devicePixelRatio).round();
   }
 
   /// Merges [changes] into the shared call state and returns the result.
@@ -275,15 +283,21 @@ class CallMatchingService {
     } catch (_) {}
   }
 
-  /// Contact name, id, open tasks and last note summary for a phone number.
+  /// Who is on the call, for the overlay: name, company, when you last
+  /// talked, the first thing you owe them, open tasks and the last note.
   Future<Map<String, dynamic>> _contextFor(String number) async {
     final contact = await _findContact(number);
     if (contact == null) return {};
     final todos = await TodoRepository().getByContactId(contact.id);
     final notes = await NoteRepository().getByContactId(contact.id);
+    final owed = todos.where((t) => !t.isCompleted && t.owedBy == OwedBy.me).toList()
+      ..sort((a, b) => (a.dueAt ?? DateTime(9999)).compareTo(b.dueAt ?? DateTime(9999)));
     return {
       'contactId': contact.id,
       'contactName': contact.name,
+      'company': contact.company.trim().isNotEmpty ? contact.company.trim() : contact.role.trim(),
+      'lastTalkAt': contact.lastInteraction.millisecondsSinceEpoch,
+      'owe': owed.isEmpty ? '' : owed.first.title,
       'pendingTasks': todos.where((t) => !t.isCompleted).take(5).map((t) => t.title).toList(),
       // An unprocessed note has no summary yet: show its text instead.
       'lastNoteSummary': notes.isEmpty
@@ -297,24 +311,26 @@ class CallMatchingService {
   // ── Finished call (log + prompt) ───────────────────────────────
 
   Future<void> _handleCallLogged(CallEvent event) async {
-    final contact = await _logCall(event);
-    if (contact == null) return;
-
-    // Let the overlay know who the call was with (needed for outgoing calls,
-    // where the number is only known once the call log is written).
+    // What the overlay gathered during the call (marks), read before the
+    // call is logged; the overlay has closed by now.
     final state = await CallOverlayState.read();
-    if (state != null) {
-      await _updateOverlay({
-        'number': event.phoneNumber,
-        ...await _contextFor(event.phoneNumber),
-      });
-    }
+    final contact = await _logCall(
+      event,
+      marks: [
+        for (final m in (state?['marks'] as List? ?? const [])) Map<String, dynamic>.from(m as Map),
+      ],
+    );
+    // The call is over and handed to the notification: the overlay state
+    // has done its job.
+    if (state != null) await CallOverlayState.clear();
+    if (contact == null) return;
     await CallOverlayState.attachContactToPendingReview(contact.id);
   }
 
   /// Matches the call to a contact (creating one if needed), logs it, and
-  /// shows the post-call prompt. Returns the contact, or null if skipped.
-  Future<Contact?> _logCall(CallEvent event) async {
+  /// shows the after-call notification, keeping the call on the wrap-up list
+  /// until it's settled or noted. Returns the contact, or null if skipped.
+  Future<Contact?> _logCall(CallEvent event, {List<Map<String, dynamic>> marks = const []}) async {
     try {
       final normalizedNumber = PhoneContact.normalizePhoneNumber(event.phoneNumber);
       AppLog.d(_tag, 'processing ${event.type.name} call from ${AppLog.maskPhone(normalizedNumber)}');
@@ -378,7 +394,26 @@ class CallMatchingService {
         minDuration: Duration(seconds: await _settings.getMinCallDuration()),
         isKnownContact: isKnownContact,
       );
-      if (prompt) await NotificationService().showPostCallPrompt(contact, callEntry);
+      if (prompt) {
+        final owed =
+            (await TodoRepository().getByContactId(
+                contact.id,
+              )).where((t) => !t.isCompleted && t.owedBy == OwedBy.me).toList()
+              ..sort((a, b) => (a.dueAt ?? DateTime(9999)).compareTo(b.dueAt ?? DateTime(9999)));
+        final owe = owed.isEmpty ? '' : owed.first.title;
+        await WrapUpStore.add(
+          WrapUp(
+            callId: callId,
+            contactId: contact.id,
+            name: contact.name,
+            seconds: event.duration.inSeconds,
+            at: event.timestamp,
+            owe: owe,
+            marks: marks,
+          ),
+        );
+        await NotificationService().showPostCallPrompt(contact, callEntry, owe: owe, marks: marks.length);
+      }
       return contact;
     } catch (e) {
       AppLog.e(_tag, 'error processing call event', e);

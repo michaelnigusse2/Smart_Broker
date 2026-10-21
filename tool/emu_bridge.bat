@@ -42,7 +42,9 @@ goto loop
 
 :handle
 set "CMD=" & set "P1=" & set "P2=" & set "P3=" & set "P4="
-if not defined SEL set "SEL=-e"
+rem The emulator by its serial: "adb -e" means "the TCP device", which is the
+rem phone when it is connected over wireless debugging.
+if not defined SEL set "SEL=-s emulator-5554"
 for /f "tokens=1-5" %%a in ("!LINE!") do (
   set "CMD=%%a"
   set "P1=%%b"
@@ -125,7 +127,7 @@ exit /b 0
 :do_install
 "%ADB%" !SEL! install -r "%APK%" >> "%LOG%" 2>&1
 rem Clearing caches is only done on the emulator, never on a phone.
-if errorlevel 1 if "!SEL!"=="-e" (
+if errorlevel 1 if "!SEL!"=="-s emulator-5554" (
   echo install failed, clearing emulator caches and retrying>> "%LOG%"
   "%ADB%" !SEL! shell pm trim-caches 64G >> "%LOG%" 2>&1
   "%ADB%" !SEL! install -r "%APK%" >> "%LOG%" 2>&1
@@ -136,7 +138,7 @@ exit /b 0
 
 :do_reinstall
 rem Removes SmartBroker and its data from the emulator first (frees space).
-if not "!SEL!"=="-e" (call :done "reinstall is emulator-only" & exit /b 0)
+if not "!SEL!"=="-s emulator-5554" (call :done "reinstall is emulator-only" & exit /b 0)
 "%ADB%" !SEL! uninstall com.smartbroker.smart_broker >> "%LOG%" 2>&1
 "%ADB%" !SEL! install "%APK%" >> "%LOG%" 2>&1
 "%ADB%" !SEL! shell monkey -p com.smartbroker.smart_broker -c android.intent.category.LAUNCHER 1 >nul 2>> "%LOG%"
@@ -153,7 +155,7 @@ rem Addis Scribe trial: push the speech runtime (+ model, audio) and run
 rem tool\scribe\run_on_device.sh on the device. "scribe emu" checks the runtime only
 rem (the emulator has no room for the 499 MB model); "scribe phone" runs it all.
 set "SEL=" & set "ABI="
-if /i "!P1!"=="emu" (set "SEL=-e" & set "ABI=x64")
+if /i "!P1!"=="emu" (set "SEL=-s emulator-5554" & set "ABI=x64")
 if /i "!P1!"=="phone" (set "ABI=arm64" & call :find_phone)
 if not defined SEL (call :done "bad target" & exit /b 0)
 set "SD=build_logs\scribe"
@@ -175,11 +177,11 @@ exit /b 0
 :do_target
 rem "target phone" sends the following commands to the phone (USB or wireless
 rem debugging), "target emu" back to the emulator.
-if /i "!P1!"=="emu" (set "SEL=-e" & call :done "target emu" & exit /b 0)
+if /i "!P1!"=="emu" (set "SEL=-s emulator-5554" & call :done "target emu" & exit /b 0)
 if /i "!P1!"=="phone" (
   set "SEL="
   call :find_phone
-  if not defined SEL (set "SEL=-e" & call :done "no phone" & exit /b 0)
+  if not defined SEL (set "SEL=-s emulator-5554" & call :done "no phone" & exit /b 0)
   call :done "target phone"
   exit /b 0
 )
