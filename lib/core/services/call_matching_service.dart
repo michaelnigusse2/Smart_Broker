@@ -60,6 +60,23 @@ bool shouldPromptAfterCall({
   return isKnownContact || mode == OverlayMode.all;
 }
 
+/// The moments marked during a call, timed from when talking started.
+///
+/// On a call you placed, the overlay counts from dialling (Android doesn't
+/// say when the other side answers), so the ringing time is taken off using
+/// the call log's length, which counts talk time only.
+@visibleForTesting
+List<Map<String, dynamic>> talkTimeMarks(Map<String, dynamic>? state, Duration talked) {
+  final marks = [for (final m in (state?['marks'] as List? ?? const [])) Map<String, dynamic>.from(m as Map)];
+  final started = state?['startedAt'];
+  final ended = state?['endedAt'];
+  if (state?['outgoing'] != true || started is! int || ended is! int) return marks;
+  final ringing = math.max(0, (ended - started) ~/ 1000 - talked.inSeconds);
+  return [
+    for (final m in marks) {...m, 'at': math.max(0, (m['at'] as int? ?? 0) - ringing)},
+  ];
+}
+
 /// Turns native call events into app behaviour:
 /// - shows the live call overlay (ringing → active → ended) with the caller's context,
 /// - logs finished calls against the matching contact,
@@ -170,7 +187,10 @@ class CallMatchingService {
           // from the app's Call button tells us who it's with.
           _callInProgress = true;
           final expected = hasNumber ? null : await CallOverlayState.takeExpectedOutgoing();
-          await _startOverlay(phase: 'active', number: hasNumber ? number : expected);
+          // Android reports "off the hook" the moment you dial; it never says
+          // when the other side answers. The overlay knows not to start a
+          // talk timer for these.
+          await _startOverlay(phase: 'active', number: hasNumber ? number : expected, outgoing: true);
         } else {
           final updated = await _updateOverlay({
             'phase': 'active',
@@ -208,10 +228,11 @@ class CallMatchingService {
         await overlay.isPermissionGranted();
   }
 
-  Future<void> _startOverlay({required String phase, String? number}) async {
+  Future<void> _startOverlay({required String phase, String? number, bool outgoing = false}) async {
     final state = {
       'phase': phase,
       'number': number,
+      'outgoing': outgoing,
       'topInset': _statusBarHeight(),
       'startedAt': DateTime.now().millisecondsSinceEpoch,
       if (number != null) ...await _contextFor(number),
@@ -316,9 +337,7 @@ class CallMatchingService {
     final state = await CallOverlayState.read();
     final contact = await _logCall(
       event,
-      marks: [
-        for (final m in (state?['marks'] as List? ?? const [])) Map<String, dynamic>.from(m as Map),
-      ],
+      marks: talkTimeMarks(state, event.duration),
     );
     // The call is over and handed to the notification: the overlay state
     // has done its job.

@@ -60,4 +60,23 @@ void main() {
     expect(OverlayMode.byName('bogus'), isNull);
     expect(OverlayMode.byName(null), isNull);
   });
+
+  test('marks on a call you placed are timed from when they picked up', () {
+    final state = {
+      'outgoing': true,
+      'startedAt': 0,
+      'endedAt': 100 * 1000, // 100 s from dialling to hanging up
+      'marks': [
+        {'type': 'mine', 'at': 40},
+        {'type': 'theirs', 'at': 10}, // marked while it was still ringing
+      ],
+    };
+    // The call log says they talked for 80 s, so it rang for 20.
+    expect(talkTimeMarks(state, const Duration(seconds: 80)), [
+      {'type': 'mine', 'at': 20},
+      {'type': 'theirs', 'at': 0},
+    ]);
+    // Incoming calls are already timed from the answer.
+    expect(talkTimeMarks({...state, 'outgoing': false}, const Duration(seconds: 80)).first['at'], 40);
+  });
 }

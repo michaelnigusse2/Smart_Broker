@@ -42,6 +42,12 @@ class _CallOverlayScreenState extends State<CallOverlayScreen> {
   int? _endedAt;
   List<Map<String, dynamic>> _marks = [];
 
+  /// A call you placed. Android says "off the hook" as soon as you dial and
+  /// never says when the other side picks up, so there's no talk timer: the
+  /// call log gives the real length afterwards.
+  bool _outgoing = false;
+  Timer? _collapseTimer;
+
   /// Status bar height (logical px) measured by the main app. The overlay
   /// window starts at the very top of the screen and gets no insets itself.
   double _topInset = 0;
@@ -80,6 +86,7 @@ class _CallOverlayScreenState extends State<CallOverlayScreen> {
     _pollTimer?.cancel();
     _clockTimer?.cancel();
     _debounceTimer?.cancel();
+    _collapseTimer?.cancel();
     _noteController.dispose();
     _noteFocus.dispose();
     super.dispose();
@@ -123,14 +130,25 @@ class _CallOverlayScreenState extends State<CallOverlayScreen> {
       _owe = (state['owe'] as String? ?? '').trim();
       _startedAt = state['startedAt'] as int?;
       _endedAt = state['endedAt'] as int?;
+      _outgoing = state['outgoing'] == true;
       _topInset = (state['topInset'] as num?)?.toDouble() ?? _topInset;
       _marks = [
         for (final m in (state['marks'] as List? ?? const [])) Map<String, dynamic>.from(m as Map),
       ];
       if (phase == 'ringing') {
         _view = _View.card;
-      } else if (phase == 'active' && (wasPhase != 'active' || _view == _View.card)) {
-        _view = _View.pill;
+      } else if (phase == 'active' && wasPhase != 'active') {
+        if (_outgoing) {
+          // Placing a call: who you're calling while it rings, then fold to
+          // the bar (or sooner, on a tap).
+          _view = _View.card;
+          _collapseTimer?.cancel();
+          _collapseTimer = Timer(const Duration(seconds: 8), () {
+            if (mounted && _view == _View.card) setState(() => _view = _View.pill);
+          });
+        } else {
+          _view = _View.pill;
+        }
       }
     });
 
@@ -244,7 +262,9 @@ class _CallOverlayScreenState extends State<CallOverlayScreen> {
     _fitWindow();
     final Widget content = switch (_view) {
       _View.card => _RingCard(
-        name: _name.isEmpty ? (_number.isEmpty ? 'Incoming call' : _number) : _name,
+        calling: _outgoing,
+        onTap: _outgoing ? () => setState(() => _view = _View.pill) : null,
+        name: _name.isEmpty ? (_number.isEmpty ? (_outgoing ? 'Outgoing call' : 'Incoming call') : _number) : _name,
         detail: [
           _company.isNotEmpty ? _company : (_contactId == null ? 'Not in your people' : ''),
           _lastTalk,
@@ -256,7 +276,7 @@ class _CallOverlayScreenState extends State<CallOverlayScreen> {
         name: _firstName,
         faceName: _name.isEmpty ? '#' : _name,
         owe: _owe,
-        clock: _clock(_elapsedSeconds),
+        clock: _outgoing ? '' : _clock(_elapsedSeconds),
         marked: _marks.isNotEmpty,
         onOpen: () => setState(() => _view = _View.marks),
       ),
@@ -264,7 +284,8 @@ class _CallOverlayScreenState extends State<CallOverlayScreen> {
         name: _firstName,
         faceName: _name.isEmpty ? '#' : _name,
         owe: _owe,
-        clock: _clock(_elapsedSeconds),
+        clock: _outgoing ? '' : _clock(_elapsedSeconds),
+        showTimes: !_outgoing,
         marks: _marks,
         onMark: _mark,
         onType: _startTyping,
@@ -372,74 +393,88 @@ class _RoundButton extends StatelessWidget {
 
 /// While it rings: app line with a hide button, who is calling, what you owe.
 class _RingCard extends StatelessWidget {
-  const _RingCard({required this.name, required this.detail, required this.owe, required this.onHide});
+  const _RingCard({
+    required this.name,
+    required this.detail,
+    required this.owe,
+    required this.onHide,
+    this.calling = false,
+    this.onTap,
+  });
 
   final String name;
   final String detail;
   final String owe;
   final VoidCallback onHide;
 
+  /// You're the one calling (the card shows while it rings at their end).
+  final bool calling;
+  final VoidCallback? onTap;
+
   @override
   Widget build(BuildContext context) {
     final sb = context.sb;
     return Semantics(
       container: true,
-      label: '$name is calling',
-      child: _Sheet(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 22,
-                  height: 22,
-                  decoration: BoxDecoration(color: sb.primary, borderRadius: BorderRadius.circular(7)),
-                  child: Icon(LucideIcons.phone, size: 12, color: sb.honey),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'SmartBroker',
-                    style: TextStyle(fontSize: 12, height: 16 / 12, fontWeight: FontWeight.w600, color: sb.text2),
+      label: calling ? 'Calling $name' : '$name is calling',
+      child: GestureDetector(
+        onTap: onTap,
+        child: _Sheet(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 22,
+                    height: 22,
+                    decoration: BoxDecoration(color: sb.primary, borderRadius: BorderRadius.circular(7)),
+                    child: Icon(LucideIcons.phone, size: 12, color: sb.honey),
                   ),
-                ),
-                _RoundButton(icon: LucideIcons.x, label: 'Hide', onTap: onHide),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                SbFace(name: name, size: 44),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 17, height: 22 / 17, fontWeight: FontWeight.w700, color: sb.text),
-                      ),
-                      if (detail.isNotEmpty)
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      calling ? 'SmartBroker · calling' : 'SmartBroker',
+                      style: TextStyle(fontSize: 12, height: 16 / 12, fontWeight: FontWeight.w600, color: sb.text2),
+                    ),
+                  ),
+                  _RoundButton(icon: LucideIcons.x, label: 'Hide', onTap: onHide),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  SbFace(name: name, size: 44),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                         Text(
-                          detail,
+                          name,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 13, height: 18 / 13, color: sb.text2),
+                          style: TextStyle(fontSize: 17, height: 22 / 17, fontWeight: FontWeight.w700, color: sb.text),
                         ),
-                    ],
+                        if (detail.isNotEmpty)
+                          Text(
+                            detail,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 13, height: 18 / 13, color: sb.text2),
+                          ),
+                      ],
+                    ),
                   ),
-                ),
+                ],
+              ),
+              if (owe.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                _OweTag(owe),
               ],
-            ),
-            if (owe.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              _OweTag(owe),
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -504,16 +539,20 @@ class _Pill extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 10),
-                Text(
-                  clock,
-                  style: TextStyle(
-                    fontSize: 14,
-                    height: 20 / 14,
-                    fontWeight: FontWeight.w700,
-                    color: sb.text2,
-                    fontFeatures: const [FontFeature.tabularFigures()],
+                // A call you placed has no talk timer (see _outgoing).
+                if (clock.isEmpty)
+                  Icon(LucideIcons.phoneOutgoing, size: 16, color: sb.text2)
+                else
+                  Text(
+                    clock,
+                    style: TextStyle(
+                      fontSize: 14,
+                      height: 20 / 14,
+                      fontWeight: FontWeight.w700,
+                      color: sb.text2,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
                   ),
-                ),
                 const SizedBox(width: 10),
                 Container(
                   width: 44,
@@ -540,6 +579,7 @@ class _MarkPanel extends StatelessWidget {
     required this.owe,
     required this.clock,
     required this.marks,
+    this.showTimes = true,
     required this.onMark,
     required this.onType,
     required this.onClose,
@@ -550,6 +590,10 @@ class _MarkPanel extends StatelessWidget {
   final String owe;
   final String clock;
   final List<Map<String, dynamic>> marks;
+
+  /// Off for calls you placed: times would count from dialling, not from
+  /// when they picked up.
+  final bool showTimes;
   final ValueChanged<String> onMark;
   final VoidCallback onType;
   final VoidCallback onClose;
@@ -570,7 +614,7 @@ class _MarkPanel extends StatelessWidget {
         child: Semantics(
           button: true,
           selected: on,
-          label: on ? '$label, marked at $at' : label,
+          label: on ? (showTimes ? '$label, marked at $at' : '$label, marked') : label,
           excludeSemantics: true,
           child: SbPressable(
             onTap: () => onMark(type),
@@ -594,7 +638,7 @@ class _MarkPanel extends StatelessWidget {
                       color: on ? sb.oweFg : sb.text,
                     ),
                   ),
-                  if (on)
+                  if (on && showTimes)
                     Row(
                       children: [
                         Icon(LucideIcons.check, size: 12, color: sb.oweFg),
@@ -637,16 +681,19 @@ class _MarkPanel extends StatelessWidget {
                   style: TextStyle(fontSize: 15, height: 20 / 15, fontWeight: FontWeight.w700, color: sb.text),
                 ),
               ),
-              Text(
-                clock,
-                style: TextStyle(
-                  fontSize: 14,
-                  height: 20 / 14,
-                  fontWeight: FontWeight.w700,
-                  color: sb.text2,
-                  fontFeatures: const [FontFeature.tabularFigures()],
+              if (clock.isEmpty)
+                Icon(LucideIcons.phoneOutgoing, size: 16, color: sb.text2)
+              else
+                Text(
+                  clock,
+                  style: TextStyle(
+                    fontSize: 14,
+                    height: 20 / 14,
+                    fontWeight: FontWeight.w700,
+                    color: sb.text2,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
                 ),
-              ),
               const SizedBox(width: 10),
               _RoundButton(icon: LucideIcons.chevronUp, label: 'Make smaller', onTap: onClose, size: 36),
             ],
