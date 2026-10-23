@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/theme/sb_widgets.dart';
 import '../../../core/transcription/dictation_audio.dart';
 import '../../../core/transcription/offline_transcriber.dart';
 import '../../../core/transcription/scribe_model_store.dart';
@@ -10,7 +11,15 @@ import '../../../core/transcription/scribe_model_store.dart';
 class OfflineDictationSettings extends StatefulWidget {
   final ScribeModelStore? store;
 
-  const OfflineDictationSettings({super.key, this.store});
+  /// The first row in its card (no line above it).
+  final bool first;
+
+  const OfflineDictationSettings({super.key, this.store, this.first = false});
+
+  /// The explanation shown under the card that holds this row.
+  static const about =
+      'Dictate notes in Amharic with no internet. Audio stays on this phone. Numbers are written as digits; '
+      'English words come out in Amharic letters, so check names and terms before saving.';
 
   @override
   State<OfflineDictationSettings> createState() => _OfflineDictationSettingsState();
@@ -77,7 +86,7 @@ class _OfflineDictationSettingsState extends State<OfflineDictationSettings> {
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Keep')),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete', style: TextStyle(color: AppColors.error)),
+            child: Text('Delete', style: TextStyle(color: context.sb.late)),
           ),
         ],
       ),
@@ -87,87 +96,75 @@ class _OfflineDictationSettingsState extends State<OfflineDictationSettings> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final sb = context.sb;
+    final tile = SbIconTile(icon: LucideIcons.mic, tint: sb.tintWarm);
     if (!OfflineTranscriber.isSupported) {
-      return const ListTile(
-        leading: Icon(LucideIcons.micOff, color: AppColors.textTertiary),
-        title: Text('Offline dictation not available'),
-        subtitle: Text('Needs a 64-bit Android phone'),
+      return SbListRow(
+        first: widget.first,
+        leading: tile,
+        title: 'Amharic voice',
+        subtitle: 'Needs a 64-bit Android phone',
       );
     }
-
     final status = _store.status;
+    Widget pill(String label, VoidCallback? onTap, {bool filled = true}) => SizedBox(
+      height: 36,
+      child: filled
+          ? FilledButton(
+              onPressed: onTap,
+              style: FilledButton.styleFrom(
+                minimumSize: const Size(0, 36),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+              ),
+              child: Text(label),
+            )
+          : TextButton(
+              onPressed: onTap,
+              style: TextButton.styleFrom(
+                minimumSize: const Size(0, 36),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+              ),
+              child: Text(label),
+            ),
+    );
     final (String subtitle, Widget? trailing) = switch (status) {
-      ScribeModelStatus.ready => (
-        'Ready · ${_mb(ScribeModel.sizeBytes)} on this phone',
-        TextButton(onPressed: _delete, child: const Text('Delete')),
-      ),
+      ScribeModelStatus.ready => ('Ready · works offline', pill('Delete', _delete, filled: false)),
       ScribeModelStatus.downloading => (
-        'Downloading ${_mb(_store.receivedBytes)} of ${_mb(ScribeModel.sizeBytes)}',
-        TextButton(onPressed: _store.cancel, child: const Text('Pause')),
+        '${_mb(_store.receivedBytes)} of ${_mb(ScribeModel.sizeBytes)}',
+        pill('Pause', _store.cancel, filled: false),
       ),
       ScribeModelStatus.verifying => ('Checking the download…', null),
-      ScribeModelStatus.failed => (
-        _store.error ?? 'Download failed',
-        TextButton(onPressed: _download, child: const Text('Retry')),
-      ),
+      ScribeModelStatus.failed => (_store.error ?? 'Download failed', pill('Retry', _download)),
       ScribeModelStatus.notDownloaded => (
         _store.receivedBytes > 0
             ? 'Paused at ${_mb(_store.receivedBytes)} of ${_mb(ScribeModel.sizeBytes)}'
-            : 'One-time download, ${_mb(ScribeModel.sizeBytes)} — use Wi-Fi',
-        ElevatedButton(onPressed: _download, child: Text(_store.receivedBytes > 0 ? 'Resume' : 'Download')),
+            : 'Works offline · ${_mb(ScribeModel.sizeBytes)}, use Wi-Fi',
+        pill(_store.receivedBytes > 0 ? 'Resume' : 'Download', _download),
       ),
     };
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        ListTile(
-          leading: Icon(LucideIcons.mic, color: status == ScribeModelStatus.ready ? AppColors.primary : null),
-          title: const Text('Amharic speech model'),
-          subtitle: Text(subtitle),
-          trailing: trailing,
-          isThreeLine: status == ScribeModelStatus.failed,
-        ),
+        SbListRow(first: widget.first, leading: tile, title: 'Amharic voice', subtitle: subtitle, trailing: trailing),
         if (status == ScribeModelStatus.downloading || status == ScribeModelStatus.verifying)
           Padding(
-            padding: const EdgeInsets.fromLTRB(AppSpacing.xl, 0, AppSpacing.xl, AppSpacing.sm),
-            child: LinearProgressIndicator(value: status == ScribeModelStatus.verifying ? null : _store.progress),
+            padding: const EdgeInsets.fromLTRB(68, 0, 16, 12),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(99),
+              child: LinearProgressIndicator(
+                minHeight: 4,
+                value: status == ScribeModelStatus.verifying ? null : _store.progress,
+              ),
+            ),
           ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(AppSpacing.xl, 0, AppSpacing.xl, AppSpacing.md),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Dictate notes in Amharic with no internet. Audio stays on this phone. '
-                'Numbers are written as digits; English words come out in Amharic letters, '
-                'so check names and terms before saving.',
-                style: theme.textTheme.bodySmall?.copyWith(color: AppColors.textSecondary),
-              ),
-              if (_device?.isLowRam ?? false) ...[
-                const SizedBox(height: AppSpacing.sm),
-                Text(
-                  'This phone has little memory; long notes may stop if other apps are open.',
-                  style: theme.textTheme.bodySmall?.copyWith(color: AppColors.error),
-                ),
-              ],
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                ScribeModel.attribution,
-                style: theme.textTheme.labelSmall?.copyWith(color: AppColors.textTertiary),
-              ),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton(
-                  style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 36)),
-                  onPressed: () => showLicensePage(context: context, applicationName: 'SmartBroker'),
-                  child: const Text('Open-source licences'),
-                ),
-              ),
-            ],
+        if (_device?.isLowRam ?? false)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(68, 0, 16, 12),
+            child: Text(
+              'This phone has little memory; long notes may stop if other apps are open.',
+              style: TextStyle(fontSize: 13, height: 18 / 13, color: sb.late),
+            ),
           ),
-        ),
       ],
     );
   }

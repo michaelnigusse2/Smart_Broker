@@ -80,6 +80,7 @@ void main() {
       'idx_reminders_open',
       'idx_calls_contact_time',
       'idx_unassigned_status',
+      'idx_unassigned_key',
     ]) {
       expect(schema.containsKey('index $name'), isTrue, reason: name);
     }
@@ -225,6 +226,59 @@ void main() {
         }),
         throwsA(isA<DatabaseException>()),
       );
+    });
+  });
+
+  group('v3 → v4 data', () {
+    late Database db;
+
+    setUp(() async {
+      final path = p.join(tempDir.path, 'v1.db');
+      await createV1Database(path, (db) async {
+        Future<void> contact(String id, String name, String phone) =>
+            db.insert('contacts', {'id': id, 'name': name, 'phoneNumber': phone, 'lastInteraction': 1});
+        Future<void> call(String id, String contactId, int at, int type) => db.insert('calls', {
+          'id': id,
+          'contactId': contactId,
+          'type': type,
+          'duration': type == 2 ? 0 : 40,
+          'timestamp': at,
+        });
+        // Made by the old call logging for an unknown caller: name = number, nothing added.
+        await contact('num', '+251911000009', '+251 911 000 009');
+        await call('k1', 'num', 100, 0);
+        await call('k2', 'num', 200, 2);
+        // Also named by its number, but you wrote a note: it stays a person.
+        await contact('numnote', '0911000010', '0911000010');
+        await db.insert('notes', {'id': 'n9', 'contactId': 'numnote', 'rawText': 'x', 'aiSummary': '', 'createdAt': 1});
+        // A real name.
+        await contact('named', 'Abebe Girma', '0911000011');
+        await call('k3', 'named', 300, 0);
+      });
+      DatabaseHelper.pathOverride = path;
+      db = await DatabaseHelper().database;
+    });
+
+    test('number-only contacts become new numbers, with their calls', () async {
+      final contacts = [for (final r in await db.query('contacts', orderBy: 'id')) r['id']];
+      expect(contacts, ['named', 'numnote']);
+      final unassigned = await db.query('unassigned_calls', orderBy: 'timestamp');
+      expect(
+        [for (final r in unassigned) '${r['id']} ${r['phoneKey']} ${r['status']} ${r['type']}'],
+        [
+          'k1 911000009 new 0',
+          'k2 911000009 new 2',
+        ],
+      );
+      expect(await db.query('calls', where: 'contactId = ?', whereArgs: ['num']), isEmpty);
+      expect([for (final r in await db.query('calls')) r['id']], ['k3']);
+    });
+
+    test('new columns have their defaults', () async {
+      final named = (await db.query('contacts', where: 'id = ?', whereArgs: ['named'])).single;
+      expect(named['otherPhones'], '');
+      expect(named['otherPhoneKeys'], '');
+      expect(named['callBackClearedAt'], isNull);
     });
   });
 }

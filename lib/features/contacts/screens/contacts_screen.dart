@@ -2,21 +2,28 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
 import '../../../core/constants/app_routes.dart';
+import '../../../core/repositories/call_repository.dart';
 import '../../../core/repositories/contact_repository.dart';
+import '../../../core/repositories/new_number_repository.dart';
 import '../../../core/repositories/reminder_repository.dart';
 import '../../../core/repositories/todo_repository.dart';
 import '../../../core/services/app_log.dart';
 import '../../../core/services/contact_merge_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/sb_widgets.dart';
+import '../../../core/utils/call_backs.dart';
 import '../../../core/utils/day_labels.dart';
 import '../../../core/utils/waiting_on_you.dart';
 import '../../../core/widgets/constrained_layout.dart';
+import '../../../models/contact.dart';
+import '../../../models/new_number.dart';
 import '../../../models/unified_contact.dart';
 import '../../home/screens/main_shell.dart';
+import '../widgets/new_number_row.dart';
 
-/// The People tab, built to the "Espresso · final" People board: the title
-/// with search and add, the four people waiting on you most, then everyone.
+/// The People tab, built to the People boards: the title with search and
+/// add, calls from numbers you haven't saved, the four people waiting on you
+/// most (call backs first), then everyone.
 class ContactsScreen extends StatefulWidget {
   const ContactsScreen({super.key, this.clock});
 
@@ -32,7 +39,8 @@ class _ContactsScreenState extends State<ContactsScreen> {
   final _searchFocus = FocusNode();
 
   List<UnifiedContact> _everyone = [];
-  List<WaitingPerson> _waiting = [];
+  List<_Waiting> _waiting = [];
+  List<NewNumber> _newNumbers = [];
   bool _loading = true;
   bool _failed = false;
   bool _searching = false;
@@ -66,16 +74,24 @@ class _ContactsScreenState extends State<ContactsScreen> {
       final pending = await TodoRepository().getPending();
       final reminders = await ReminderRepository().getOpen();
       final now = _now;
-      final missed = reminders.where((r) => r.dateTime.isBefore(now.subtract(const Duration(minutes: 5))));
+      final calls = await CallRepository().getSince(now.subtract(callBackWindow));
+      final newNumbers = await NewNumberRepository().open(now: now);
+      // Call back reminders show on the call back tile instead.
+      final missed = reminders.where(
+        (r) => !r.isCallBack && r.dateTime.isBefore(now.subtract(const Duration(minutes: 5))),
+      );
+      final byId = {for (final c in contacts) c.id: c};
+      final open = callBacks(calls: calls, contacts: byId, reminders: reminders, now: now);
+      final calledBack = {for (final cb in open) cb.contact.id};
       if (!mounted) return;
       setState(() {
         _everyone = everyone;
-        _waiting = waitingOnYou(
-          pending: pending,
-          missed: missed,
-          contacts: {for (final c in contacts) c.id: c},
-          now: now,
-        );
+        _newNumbers = newNumbers;
+        _waiting = [
+          for (final cb in open) _Waiting(cb.contact, callBack: cb),
+          for (final p in waitingOnYou(pending: pending, missed: missed, contacts: byId, now: now))
+            if (!calledBack.contains(p.contact.id)) _Waiting(p.contact, person: p),
+        ];
         _loading = false;
         _failed = false;
       });
@@ -165,6 +181,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
     final people = _matches;
     final now = _now;
     final showWaiting = !_searching && _waiting.isNotEmpty;
+    final showNew = !_searching && _newNumbers.isNotEmpty;
     final String listLabel;
     if (_searching && _query.trim().isNotEmpty) {
       listLabel = people.isEmpty ? 'No one found' : '${people.length} found';
@@ -195,6 +212,22 @@ class _ContactsScreenState extends State<ContactsScreen> {
                         : _Header(onSearch: _startSearch, onAdd: _addPerson),
                   ),
                 ),
+                if (showNew)
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
+                    sliver: SliverToBoxAdapter(
+                      child: SbRise(
+                        child: _NewNumbersCard(
+                          numbers: _newNumbers,
+                          onChanged: _load,
+                          onSeeAll: () async {
+                            await Navigator.pushNamed(context, AppRoutes.newNumbers);
+                            if (mounted) _load();
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
                 if (showWaiting)
                   SliverPadding(
                     padding: const EdgeInsets.fromLTRB(16, 22, 16, 0),
@@ -204,6 +237,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
                         children: [
                           const SbCap('Waiting on you'),
                           SbRise(
+                            delay: Duration(milliseconds: showNew ? 80 : 0),
                             child: _WaitingGrid(
                               people: _waiting.take(4).toList(),
                               now: now,
@@ -336,12 +370,21 @@ class _SearchBar extends StatelessWidget {
 }
 
 /// Four cards across: face, first name, and when it's due ("2d late" in red).
+/// A tile under "Waiting on you": someone to call back, or someone you owe.
+class _Waiting {
+  const _Waiting(this.contact, {this.callBack, this.person});
+
+  final Contact contact;
+  final CallBack? callBack;
+  final WaitingPerson? person;
+}
+
 class _WaitingGrid extends StatelessWidget {
   const _WaitingGrid({required this.people, required this.now, required this.onTap});
 
-  final List<WaitingPerson> people;
+  final List<_Waiting> people;
   final DateTime now;
-  final ValueChanged<WaitingPerson> onTap;
+  final ValueChanged<_Waiting> onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -364,21 +407,38 @@ class _WaitingGrid extends StatelessWidget {
 class _WaitingCard extends StatelessWidget {
   const _WaitingCard({required this.person, required this.now, required this.onTap});
 
-  final WaitingPerson person;
+  final _Waiting person;
   final DateTime now;
   final VoidCallback onTap;
+
+  static String _clock(DateTime t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
   @override
   Widget build(BuildContext context) {
     final sb = context.sb;
     final name = person.contact.name.trim();
     final first = name.split(RegExp(r'\s+')).first;
-    final due = person.due;
     final String when;
-    if (due == null) {
-      when = person.late ? 'Late' : 'No date';
+    final bool late;
+    final callBack = person.callBack;
+    final owed = person.person;
+    if (callBack != null) {
+      // "Call back" in red until you set a reminder; then its time.
+      final reminder = callBack.reminder;
+      late = reminder == null;
+      when = reminder == null
+          ? 'Call back'
+          : DayLabels.daysBetween(now, reminder.dateTime) == 0
+          ? _clock(reminder.dateTime)
+          : DayLabels.due(reminder.dateTime, now);
     } else {
-      when = person.late ? DayLabels.late(due, now) : DayLabels.due(due, now);
+      late = owed?.late ?? false;
+      final due = owed?.due;
+      if (due == null) {
+        when = late ? 'Late' : 'No date';
+      } else {
+        when = late ? DayLabels.late(due, now) : DayLabels.due(due, now);
+      }
     }
     return Semantics(
       button: true,
@@ -397,7 +457,7 @@ class _WaitingCard extends StatelessWidget {
                 clipBehavior: Clip.none,
                 children: [
                   SbFace(name: name, size: 52),
-                  if (person.late) const Positioned(top: 1, right: 1, child: SbLateDot(size: 12)),
+                  if (late) const Positioned(top: 1, right: 1, child: SbLateDot(size: 12)),
                 ],
               ),
             ),
@@ -417,7 +477,7 @@ class _WaitingCard extends StatelessWidget {
                 fontSize: 12,
                 height: 16 / 12,
                 fontWeight: FontWeight.w700,
-                color: person.late ? sb.late : sb.text2,
+                color: late ? sb.late : sb.text2,
                 fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
@@ -546,6 +606,90 @@ class _NoOneYet extends StatelessWidget {
             ),
           ),
           TextButton(onPressed: onAdd, child: const Text('Add')),
+        ],
+      ),
+    );
+  }
+}
+
+/// "New numbers 3": calls from numbers you haven't saved, a few at a time.
+class _NewNumbersCard extends StatelessWidget {
+  const _NewNumbersCard({required this.numbers, required this.onChanged, required this.onSeeAll});
+
+  final List<NewNumber> numbers;
+  final VoidCallback onChanged;
+  final VoidCallback onSeeAll;
+
+  static const shown = 3;
+
+  @override
+  Widget build(BuildContext context) {
+    final sb = context.sb;
+    return SbCard(
+      radius: 26,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+            child: Semantics(
+              header: true,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text.rich(
+                    TextSpan(
+                      children: [
+                        const TextSpan(text: 'New numbers '),
+                        TextSpan(
+                          text: '${numbers.length}',
+                          style: TextStyle(color: sb.text2, fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                    style: const TextStyle(fontSize: 16, height: 22 / 16, fontWeight: FontWeight.w700),
+                  ),
+                  Text(
+                    "Calls from numbers you haven't saved",
+                    style: TextStyle(fontSize: 13, height: 18 / 13, color: sb.text2),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          for (final n in numbers.take(shown)) NewNumberRow(number: n, onChanged: onChanged),
+          if (numbers.length > shown)
+            InkWell(
+              onTap: onSeeAll,
+              child: Container(
+                constraints: const BoxConstraints(minHeight: 48),
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(
+                  border: Border(top: BorderSide(color: sb.fill)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'See all ${numbers.length}',
+                        style: TextStyle(fontSize: 15, height: 20 / 15, fontWeight: FontWeight.w600, color: sb.accent),
+                      ),
+                    ),
+                    const SbChevron(),
+                  ],
+                ),
+              ),
+            ),
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+            decoration: BoxDecoration(
+              border: Border(top: BorderSide(color: sb.fill)),
+            ),
+            child: Text(
+              "Long-press a number to ignore it. Numbers you don't save leave after 30 days.",
+              style: TextStyle(fontSize: 12, height: 16 / 12, color: sb.text2),
+            ),
+          ),
         ],
       ),
     );

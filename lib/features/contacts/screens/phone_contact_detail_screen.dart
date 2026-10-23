@@ -102,8 +102,8 @@ class _PhoneContactDetailScreenState extends State<PhoneContactDetailScreen> {
               // Avatar
               CircleAvatar(
                 radius: 48,
-                backgroundColor: AppColors.surfaceElevated,
-                foregroundColor: AppColors.textPrimary,
+                backgroundColor: context.sb.fill,
+                foregroundColor: context.sb.text,
                 child: Text(
                   contact.initials,
                   style: theme.textTheme.displaySmall?.copyWith(fontSize: 32),
@@ -126,7 +126,7 @@ class _PhoneContactDetailScreenState extends State<PhoneContactDetailScreen> {
               Text(
                 contact.phoneNumber,
                 style: theme.textTheme.bodyLarge?.copyWith(
-                  color: AppColors.textSecondary,
+                  color: context.sb.text2,
                 ),
               ),
 
@@ -136,12 +136,12 @@ class _PhoneContactDetailScreenState extends State<PhoneContactDetailScreen> {
               Container(
                 padding: const EdgeInsets.all(AppSpacing.lg),
                 decoration: BoxDecoration(
-                  color: AppColors.surfaceElevated,
+                  color: context.sb.fill,
                   borderRadius: AppRadius.card,
                 ),
                 child: Column(
                   children: [
-                    const Icon(LucideIcons.smartphone, size: 32, color: AppColors.textTertiary),
+                    Icon(LucideIcons.smartphone, size: 32, color: context.sb.text3),
                     const SizedBox(height: AppSpacing.md),
                     Text(
                       'This is a phone contact.',
@@ -151,7 +151,7 @@ class _PhoneContactDetailScreenState extends State<PhoneContactDetailScreen> {
                     Text(
                       'Add ${contact.name} to SmartBroker to start logging notes, tasks, and calls.',
                       style: theme.textTheme.bodyMedium?.copyWith(
-                        color: AppColors.textSecondary,
+                        color: context.sb.text2,
                         height: 1.4,
                       ),
                       textAlign: TextAlign.center,
@@ -168,12 +168,12 @@ class _PhoneContactDetailScreenState extends State<PhoneContactDetailScreen> {
                 child: ElevatedButton.icon(
                   onPressed: _isSaving ? null : _addToSmartBroker,
                   icon: _isSaving
-                      ? const SizedBox(
+                      ? SizedBox(
                           width: 20,
                           height: 20,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            valueColor: AlwaysStoppedAnimation<Color>(context.sb.onPrimary),
                           ),
                         )
                       : const Icon(LucideIcons.userPlus),

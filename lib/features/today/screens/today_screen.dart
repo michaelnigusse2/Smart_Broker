@@ -3,7 +3,9 @@ import 'package:intl/intl.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
 import '../../../core/constants/app_routes.dart';
+import '../../../core/repositories/call_repository.dart';
 import '../../../core/repositories/contact_repository.dart';
+import '../../../core/repositories/new_number_repository.dart';
 import '../../../core/repositories/note_repository.dart';
 import '../../../core/repositories/reminder_repository.dart';
 import '../../../core/repositories/todo_repository.dart';
@@ -13,15 +15,20 @@ import '../../../core/services/profile_service.dart';
 import '../../../core/services/wrap_up_store.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/sb_widgets.dart';
+import '../../../core/utils/call_backs.dart';
 import '../../../core/utils/ethiopian_date.dart';
 import '../../../core/utils/waiting_on_you.dart';
 import '../../../core/widgets/constrained_layout.dart';
 import '../../../models/contact.dart';
+import '../../../models/new_number.dart';
 import '../../../models/reminder.dart';
 import '../../../models/todo_item.dart';
+import '../../calls/widgets/call_back_sheets.dart';
+import '../../contacts/widgets/who_was_this_sheet.dart';
 import '../../home/screens/main_shell.dart';
+import '../widgets/call_back_card.dart';
 
-/// The first tab, built to the "Espresso · final" Today board: the headline,
+/// The first tab, built to the Today boards: the headline, who to call back,
 /// the rest of the day from "Now" on (the next item opened up), and the
 /// people waiting on you.
 class TodayScreen extends StatefulWidget {
@@ -49,6 +56,12 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
 
   /// Calls you said "Not now" to after they ended.
   List<WrapUp> _wrapUps = [];
+
+  /// People you missed and haven't talked to since.
+  List<CallBack> _callBacks = [];
+
+  /// New numbers whose last call you missed (a few; the rest are on People).
+  List<NewNumber> _missedNew = [];
   bool _loading = true;
   bool _failed = false;
 
@@ -86,15 +99,22 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
       final notes = await NoteRepository().counts();
       final wrapUps = await WrapUpStore.all();
       final now = _now;
+      final calls = await CallRepository().getSince(now.subtract(callBackWindow));
+      final newNumbers = await NewNumberRepository().open(now: now);
       // Anything that started in the last five minutes still counts as next.
       final cutoff = now.subtract(const Duration(minutes: 5));
       final endOfDay = DateTime(now.year, now.month, now.day).add(const Duration(days: 1));
       if (!mounted) return;
       setState(() {
         _contacts = {for (final c in contacts) c.id: c};
-        _upcoming = reminders.where((r) => !r.dateTime.isBefore(cutoff) && r.dateTime.isBefore(endOfDay)).toList()
+        // "Call Selam back" reminders show on their call back row instead.
+        final agenda = reminders.where((r) => !r.isCallBack);
+        _upcoming = agenda.where((r) => !r.dateTime.isBefore(cutoff) && r.dateTime.isBefore(endOfDay)).toList()
           ..sort((a, b) => a.dateTime.compareTo(b.dateTime));
-        _late = reminders.where((r) => r.dateTime.isBefore(cutoff)).toList();
+        _late = agenda.where((r) => r.dateTime.isBefore(cutoff)).toList();
+        _callBacks = callBacks(calls: calls, contacts: _contacts, reminders: reminders, now: now);
+        final since = now.subtract(callBackWindow);
+        _missedNew = newNumbers.where((n) => n.waitingForCallBack && n.lastMissedAt!.isAfter(since)).take(3).toList();
         // Today is about what you owe; what others owe you lives on Promises.
         _pending = todos.where((t) => t.owedBy == OwedBy.me).toList();
         _notesToFinish = notes.unprocessed;
@@ -151,6 +171,15 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
         'callId': chosen.callId,
       },
     );
+  }
+
+  Future<void> _callBackActions(CallBack cb) async {
+    if (await showCallBackActions(context, cb) && mounted) _load();
+  }
+
+  Future<void> _whoWasThis(NewNumber number) async {
+    await showWhoWasThisSheet(context, number.phoneKey);
+    if (mounted) _load();
   }
 
   Future<void> _call(Contact contact) async {
@@ -227,7 +256,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
                 ),
                 const SizedBox(height: 22),
                 SbRise(
-                  child: _Headline(things: _upcoming.length, due: _dueCount),
+                  child: _Headline(things: _upcoming.length, due: _dueCount, callBacks: _callBacks.length),
                 ),
                 if (_wrapUps.isNotEmpty || _notesToFinish > 0) ...[
                   const SizedBox(height: 14),
@@ -247,9 +276,26 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
                     ),
                   ),
                 ],
-                const SizedBox(height: 24),
+                if (_callBacks.isNotEmpty || _missedNew.isNotEmpty) ...[
+                  const SizedBox(height: 22),
+                  SbRise(
+                    delay: const Duration(milliseconds: 80),
+                    child: CallBackCard(
+                      callBacks: _callBacks,
+                      newNumbers: _missedNew,
+                      now: _now,
+                      promiseFor: _promiseFor,
+                      onOpen: (cb) => _open(AppRoutes.contactDetail, arguments: cb.contact.id),
+                      onCall: (cb) => _call(cb.contact),
+                      onActions: _callBackActions,
+                      onNewNumber: _whoWasThis,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ] else
+                  const SizedBox(height: 24),
                 SbRise(
-                  delay: const Duration(milliseconds: 80),
+                  delay: Duration(milliseconds: _callBacks.isNotEmpty || _missedNew.isNotEmpty ? 160 : 80),
                   child: _upcoming.isEmpty
                       ? _EmptyDay(onAdd: () => _open(AppRoutes.calendar))
                       : _Agenda(
@@ -264,7 +310,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
                 if (waiting.isNotEmpty) ...[
                   const SizedBox(height: 10),
                   SbRise(
-                    delay: const Duration(milliseconds: 160),
+                    delay: const Duration(milliseconds: 200),
                     child: _WaitingOnYou(
                       people: waiting,
                       onTap: () => MainShell.selectTab(context, MainShell.promisesTab),
@@ -352,11 +398,11 @@ class _Header extends StatelessWidget {
                   width: 36,
                   height: 36,
                   alignment: Alignment.center,
-                  decoration: BoxDecoration(color: sb.honey, shape: BoxShape.circle),
+                  decoration: BoxDecoration(color: sb.meBg, shape: BoxShape.circle),
                   child: Text(
                     name.isEmpty ? '·' : SbFace.letterFor(name),
                     textScaler: TextScaler.noScaling,
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF2A1C15)),
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: sb.meFg),
                   ),
                 ),
               ),
@@ -370,16 +416,28 @@ class _Header extends StatelessWidget {
 
 /// "3 calls today. / 1 promise due." in Bricolage 36/40, second line lighter.
 class _Headline extends StatelessWidget {
-  const _Headline({required this.things, required this.due});
+  const _Headline({required this.things, required this.due, this.callBacks = 0});
 
   final int things;
   final int due;
 
+  /// People to call back: when there are any, they lead.
+  final int callBacks;
+
   @override
   Widget build(BuildContext context) {
     final sb = context.sb;
-    final first = things == 0 ? 'A clear day.' : '$things ${things == 1 ? 'call' : 'calls'} today.';
-    final second = due == 0 ? 'Nothing due.' : '$due ${due == 1 ? 'promise' : 'promises'} due.';
+    final calls = '$things ${things == 1 ? 'call' : 'calls'} today.';
+    final promises = '$due ${due == 1 ? 'promise' : 'promises'} due.';
+    final String first;
+    final String second;
+    if (callBacks > 0) {
+      first = '$callBacks to call back.';
+      second = things > 0 ? calls : (due > 0 ? promises : 'Nothing else today.');
+    } else {
+      first = things == 0 ? 'A clear day.' : calls;
+      second = due == 0 ? 'Nothing due.' : promises;
+    }
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4),
       child: Text.rich(
@@ -880,14 +938,14 @@ class _WaitingOnYou extends StatelessWidget {
                         height: 40,
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
-                          color: SbTint.neutral.bg,
+                          color: sb.faces.last.bg,
                           shape: BoxShape.circle,
                           border: Border.all(color: sb.surface, width: 3, strokeAlign: BorderSide.strokeAlignOutside),
                         ),
                         child: Text(
                           '+$extra',
                           textScaler: TextScaler.noScaling,
-                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: SbTint.neutral.fg),
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: sb.faces.last.fg),
                         ),
                       ),
                     ),

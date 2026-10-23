@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- The app is light-only until dark mode lands; keep the launch screen
-         cream so it doesn't flash dark first. Dark canvas: #17110D. -->
-    <color name="sb_canvas">#F3ECE2</color>
+    <!-- Ink dark canvas (SbPalette.inkDark.canvas). -->
+    <color name="sb_canvas">#111113</color>
 </resources>

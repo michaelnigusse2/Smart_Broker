@@ -14,6 +14,13 @@ class Contact {
   final int pendingTasksCount;
   final String avatarUrl;
 
+  /// More numbers for the same person (a second phone), as typed.
+  final List<String> otherPhones;
+
+  /// When you said "Not needed" to their missed calls: calls missed before
+  /// this don't ask for a call back.
+  final DateTime? callBackClearedAt;
+
   const Contact({
     required this.id,
     required this.name,
@@ -24,7 +31,18 @@ class Contact {
     required this.lastInteraction,
     this.pendingTasksCount = 0,
     this.avatarUrl = '',
+    this.otherPhones = const [],
+    this.callBackClearedAt,
   });
+
+  /// Every number: the main one first.
+  List<String> get allPhones => [phoneNumber, ...otherPhones];
+
+  /// Keys of [otherPhones], stored as ",key1,key2," so one LIKE finds them.
+  String get otherPhoneKeys {
+    final keys = [for (final p in otherPhones) PhoneContact.matchKey(p)].where((k) => k.isNotEmpty).toList();
+    return keys.isEmpty ? '' : ',${keys.join(',')},';
+  }
 
   /// Key that identifies this contact's number (see [PhoneContact.matchKey]).
   String get phoneKey => PhoneContact.matchKey(phoneNumber);
@@ -51,6 +69,9 @@ class Contact {
       'lastInteraction': lastInteraction.millisecondsSinceEpoch,
       'avatarUrl': avatarUrl,
       'phoneKey': phoneKey,
+      'otherPhones': otherPhones.join('\n'),
+      'otherPhoneKeys': otherPhoneKeys,
+      'callBackClearedAt': callBackClearedAt?.millisecondsSinceEpoch,
     };
   }
 
@@ -65,6 +86,13 @@ class Contact {
       lastInteraction: DateTime.fromMillisecondsSinceEpoch(map['lastInteraction']),
       pendingTasksCount: (map['openTaskCount'] ?? map['pendingTasksCount'] ?? 0) as int,
       avatarUrl: map['avatarUrl'] ?? '',
+      otherPhones: [
+        for (final p in (map['otherPhones'] as String? ?? '').split('\n'))
+          if (p.trim().isNotEmpty) p.trim(),
+      ],
+      callBackClearedAt: map['callBackClearedAt'] == null
+          ? null
+          : DateTime.fromMillisecondsSinceEpoch(map['callBackClearedAt'] as int),
     );
   }
 
@@ -78,6 +106,8 @@ class Contact {
     DateTime? lastInteraction,
     int? pendingTasksCount,
     String? avatarUrl,
+    List<String>? otherPhones,
+    DateTime? callBackClearedAt,
   }) {
     return Contact(
       id: id ?? this.id,
@@ -89,6 +119,8 @@ class Contact {
       lastInteraction: lastInteraction ?? this.lastInteraction,
       pendingTasksCount: pendingTasksCount ?? this.pendingTasksCount,
       avatarUrl: avatarUrl ?? this.avatarUrl,
+      otherPhones: otherPhones ?? this.otherPhones,
+      callBackClearedAt: callBackClearedAt ?? this.callBackClearedAt,
     );
   }
 }

@@ -1,26 +1,32 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'package:lucide_icons/lucide_icons.dart';
-import 'dart:io' show Platform;
+
+import '../../../core/constants/app_routes.dart';
 import '../../../core/database/seed_data.dart';
 import '../../../core/repositories/contact_repository.dart';
-import '../../../core/constants/app_routes.dart';
-import '../../../core/services/app_log.dart';
-import '../../../core/services/local_data_service.dart';
-import '../../../core/services/notification_service.dart';
-import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/ai_consent_dialog.dart';
-import '../../../core/widgets/constrained_layout.dart';
-import '../../../core/services/api_key_service.dart';
+import '../../../core/repositories/new_number_repository.dart';
 import '../../../core/services/ai_provider.dart';
-import '../../../core/services/ai_service.dart';
+import '../../../core/services/api_key_service.dart';
+import '../../../core/services/app_log.dart';
 import '../../../core/services/call_detection_service.dart';
 import '../../../core/services/call_matching_service.dart';
+import '../../../core/services/local_data_service.dart';
+import '../../../core/services/notification_service.dart';
+import '../../../core/services/profile_service.dart';
 import '../../../core/services/settings_service.dart';
+import '../../../core/theme/app_theme.dart';
+import '../../../core/theme/appearance.dart';
+import '../../../core/theme/sb_widgets.dart';
+import '../../../core/widgets/ai_consent_dialog.dart';
 import '../../../models/call_entry.dart';
 import '../widgets/offline_dictation_settings.dart';
 
+/// Settings, as on the "Settings" board: you, Appearance, Calls, Notes and
+/// AI, Your data.
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -29,150 +35,117 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  final _apiKeyController = TextEditingController();
-  final _modelController = TextEditingController();
-  AiProvider _provider = AiProvider.fallback;
-  bool _isObscured = true;
-  bool _isChecking = false;
-  bool _hasKey = false;
-  String? _statusMessage;
-
-  // Call detection state
+  final _settingsService = SettingsService();
   final _callDetectionService = CallDetectionService();
   final _callMatchingService = CallMatchingService();
-  final _settingsService = SettingsService();
+
+  String _name = '';
+  WorkType? _work;
+  String _language = 'en';
+
+  AiProvider _provider = AiProvider.fallback;
+  bool _hasKey = false;
 
   bool _callPermissionGranted = false;
   bool _callServiceRunning = false;
-
   bool _promptAfterCall = true;
+  bool _missedReminders = true;
   int _minCallDuration = 10;
   OverlayMode _overlayMode = OverlayMode.knownOnly;
-  bool _overlayPermissionGranted = false;
+  int _ignored = 0;
 
   @override
   void initState() {
     super.initState();
-    _loadKey();
-    _loadCallDetectionState();
+    _load();
   }
 
-  Future<void> _loadKey() async {
+  Future<void> _load() async {
+    final profile = ProfileService();
+    final name = await profile.getName();
+    final work = await profile.getWork();
+    final language = await profile.getLanguage();
     final provider = await _settingsService.getAiProvider();
     final key = await ApiKeyService().getKey(provider);
-    final model = await _settingsService.getAiModel(provider);
-    if (!mounted) return;
-    setState(() {
-      _provider = provider;
-      _modelController.text = model;
-      _apiKeyController.text = key ?? '';
-      _hasKey = key != null && key.isNotEmpty;
-      _statusMessage = _hasKey ? 'Connected' : 'Not configured';
-    });
-  }
-
-  Future<void> _selectProvider(AiProvider? provider) async {
-    if (provider == null || provider.id == _provider.id) return;
-    await _settingsService.setAiProvider(provider);
-    await _loadKey();
-  }
-
-  Future<void> _loadCallDetectionState() async {
-    final promptEnabled = await _settingsService.getPromptAfterCall();
+    final prompt = await _settingsService.getPromptAfterCall();
+    final missed = await _settingsService.getMissedCallReminders();
     final minDuration = await _settingsService.getMinCallDuration();
-    final overlayMode = await _settingsService.getOverlayMode();
-
-    bool overlayPerm = false;
-    try {
-      overlayPerm = await FlutterOverlayWindow.isPermissionGranted();
-    } catch (_) {}
-
-    if (mounted) {
-      setState(() {
-        _promptAfterCall = promptEnabled;
-        _minCallDuration = minDuration;
-        _overlayMode = overlayMode;
-        _overlayPermissionGranted = overlayPerm;
-      });
+    final mode = await _settingsService.getOverlayMode();
+    final ignored = await NewNumberRepository().ignoredCount();
+    var permission = false;
+    var running = false;
+    if (_callDetectionService.isSupported) {
+      permission = await _callDetectionService.isPermissionGranted();
+      running = await _callDetectionService.isRunning();
     }
-
-    if (!_callDetectionService.isSupported) return;
-
-    final permGranted = await _callDetectionService.isPermissionGranted();
-    final running = await _callDetectionService.isRunning();
-
-    if (mounted) {
-      setState(() {
-        _callPermissionGranted = permGranted;
-        _callServiceRunning = running;
-      });
-    }
+    if (!mounted) return;
+    setState(() {
+      _name = name;
+      _work = work;
+      _language = language;
+      _provider = provider;
+      _hasKey = key != null && key.isNotEmpty;
+      _promptAfterCall = prompt;
+      _missedReminders = missed;
+      _minCallDuration = minDuration;
+      _overlayMode = mode;
+      _ignored = ignored;
+      _callPermissionGranted = permission;
+      _callServiceRunning = running;
+    });
   }
 
-  Future<void> _saveKey() async {
-    final key = _apiKeyController.text.trim();
-    final model = _modelController.text.trim();
-    if (key.isEmpty) {
-      await ApiKeyService().deleteKey(_provider);
-      if (!mounted) return;
-      setState(() {
-        _hasKey = false;
-        _statusMessage = 'Not configured';
-      });
-      return;
+  void _say(String message) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+
+  // ── You ─────────────────────────────────────────────────────────
+
+  Future<void> _editProfile() async {
+    final changed = await showModalBottomSheet<bool>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      backgroundColor: context.sb.canvas,
+      builder: (_) => _ProfileSheet(name: _name, work: _work),
+    );
+    if (changed == true) await _load();
+  }
+
+  Future<void> _setLanguage(String language) async {
+    setState(() => _language = language);
+    await ProfileService().setLanguage(language);
+    if (language == 'am') _say('Amharic screens are on the way. Dictation already works in Amharic.');
+  }
+
+  // ── Calls ───────────────────────────────────────────────────────
+
+  Future<void> _setOverlayMode(OverlayMode mode) async {
+    if (mode != OverlayMode.off) {
+      var granted = false;
+      try {
+        granted = await FlutterOverlayWindow.isPermissionGranted();
+        if (!granted) granted = await FlutterOverlayWindow.requestPermission() ?? false;
+      } catch (_) {}
+      if (!granted) {
+        _say('Allow "Display over other apps" to see the call card');
+        return;
+      }
     }
-
-    setState(() {
-      _isChecking = true;
-      _statusMessage = 'Validating...';
-    });
-
-    final aiService = AiService(provider: _provider, apiKey: key, model: model);
-    final result = await aiService.validateKey();
-
-    if (!mounted) return;
-
-    if (result == 'valid') {
-      await ApiKeyService().saveKey(_provider, key);
-      await _settingsService.setAiModel(_provider, model);
-      if (!mounted) return;
-      setState(() {
-        _hasKey = true;
-        _statusMessage = 'Connected';
-        _isChecking = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('API Key saved successfully')),
-      );
-    } else {
-      if (!mounted) return;
-      setState(() {
-        _statusMessage = 'Failed: $result';
-        _isChecking = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to validate API Key'), backgroundColor: AppColors.error),
-      );
-    }
+    await _settingsService.setOverlayMode(mode);
+    if (mounted) setState(() => _overlayMode = mode);
   }
 
   Future<void> _toggleCallDetection(bool enable) async {
     if (enable) {
-      // Request permission first
       if (!_callPermissionGranted) {
         final granted = await _callDetectionService.requestPermission();
         if (!mounted) return;
         setState(() => _callPermissionGranted = granted);
         if (!granted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Phone permission is required for call detection')),
-          );
+          _say('Phone permission is needed to know who is calling');
           return;
         }
       }
-      // Start the service
-      final started = await _callDetectionService.start();
-      if (started) {
+      if (await _callDetectionService.start()) {
         _callMatchingService.startListening();
         await _settingsService.setCallDetectionEnabled(true);
       }
@@ -181,19 +154,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final running = await _callDetectionService.isRunning();
       if (!mounted) return;
       setState(() => _callServiceRunning = running);
-      if (!running) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Call detection could not start on this device')),
-        );
-      }
+      if (!running) _say('Call detection could not start on this phone');
     } else {
       await _settingsService.setCallDetectionEnabled(false);
       await _callDetectionService.stop();
       _callMatchingService.stopListening();
-      if (!mounted) return;
-      setState(() => _callServiceRunning = false);
+      if (mounted) setState(() => _callServiceRunning = false);
     }
   }
+
+  Future<void> _stopDetectionAsk() async {
+    final stop = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Stop listening for calls?'),
+        content: const Text('No call card, wrap-up or missed-call reminders until you turn it on again.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Keep on')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Stop', style: TextStyle(color: context.sb.late)),
+          ),
+        ],
+      ),
+    );
+    if (stop == true) await _toggleCallDetection(false);
+  }
+
+  Future<void> _setSkip(int seconds) async {
+    final value = seconds.clamp(0, 60);
+    setState(() => _minCallDuration = value);
+    await _settingsService.setMinCallDuration(value);
+  }
+
+  // ── Your data ───────────────────────────────────────────────────
 
   Future<void> _resetLocalData() async {
     Future<bool> confirm(String title, String body, String action) async =>
@@ -206,7 +200,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
               TextButton(
                 onPressed: () => Navigator.pop(ctx, true),
-                child: Text(action, style: const TextStyle(color: AppColors.error)),
+                child: Text(action, style: TextStyle(color: context.sb.late)),
               ),
             ],
           ),
@@ -214,8 +208,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         false;
 
     if (!await confirm(
-      'Reset local data?',
-      'This deletes every contact, note, task, reminder and call stored in SmartBroker on this phone. '
+      'Delete everything?',
+      'This deletes every person, note, promise, reminder and call stored in SmartBroker on this phone. '
           'Your settings and AI key are kept.',
       'Continue',
     )) {
@@ -229,25 +223,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final messenger = ScaffoldMessenger.of(context);
     try {
       await LocalDataService().resetAll();
-      messenger.showSnackBar(const SnackBar(content: Text('Local data deleted')));
-      // Rebuild every tab from the now-empty database.
+      messenger.showSnackBar(const SnackBar(content: Text('Everything on this phone was deleted')));
       navigator.pushNamedAndRemoveUntil(AppRoutes.shell, (_) => false);
     } catch (e, st) {
       AppLog.e('Settings', 'reset failed', e, st);
-      messenger.showSnackBar(SnackBar(content: Text('Could not reset: $e')));
+      messenger.showSnackBar(SnackBar(content: Text('Could not delete: $e')));
     }
   }
+
+  // ── Developer tools (debug builds) ─────────────────────────────
 
   Future<void> _loadDemoData() async {
     final messenger = ScaffoldMessenger.of(context);
     try {
       final added = await SeedData.loadDemoData();
       if (added) await NotificationService().rescheduleAll();
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(added ? 'Demo data loaded' : 'Demo data is already loaded'),
-        ),
-      );
+      messenger.showSnackBar(SnackBar(content: Text(added ? 'Demo data loaded' : 'Demo data is already loaded')));
     } catch (e, st) {
       AppLog.e('Settings', 'loading demo data failed', e, st);
       messenger.showSnackBar(SnackBar(content: Text('Could not load demo data: $e')));
@@ -353,327 +344,612 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  @override
-  void dispose() {
-    _apiKeyController.dispose();
-    _modelController.dispose();
-    super.dispose();
-  }
+  // ── Build ───────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
-    final isAndroid = Platform.isAndroid;
-
+    final sb = context.sb;
+    final text = Theme.of(context).textTheme;
+    final appearance = AppearanceController.instance;
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Settings'),
-      ),
-      body: ConstrainedLayout(
+      body: SafeArea(
         child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
           children: [
-            const SizedBox(height: AppSpacing.md),
-            _buildSectionHeader(context, 'AI Integration'),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: SbCircleButton(
+                icon: LucideIcons.chevronLeft,
+                tooltip: 'Back',
+                onPressed: () => Navigator.maybePop(context),
+              ),
+            ),
+            const SizedBox(height: 18),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.md),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  DropdownButtonFormField<AiProvider>(
-                    initialValue: _provider,
-                    key: ValueKey(_provider.id),
-                    decoration: const InputDecoration(
-                      labelText: 'Provider',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: [
-                      for (final p in AiProvider.all) DropdownMenuItem(value: p, child: Text(p.name)),
-                    ],
-                    onChanged: _isChecking ? null : _selectProvider,
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  Text('${_provider.name} API Key', style: const TextStyle(fontWeight: FontWeight.w500)),
-                  if (_statusMessage != null) ...[
-                    const SizedBox(height: AppSpacing.xs),
-                    Text(
-                      _statusMessage!,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: _hasKey ? AppColors.primary : AppColors.error,
-                        fontWeight: FontWeight.w500,
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Text('Settings', style: text.headlineLarge),
+            ),
+            const SizedBox(height: 16),
+
+            // You
+            SbCard(
+              onTap: _editProfile,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 52,
+                      height: 52,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(color: sb.meBg, shape: BoxShape.circle),
+                      child: Text(
+                        _name.isEmpty ? '·' : SbFace.letterFor(_name),
+                        textScaler: TextScaler.noScaling,
+                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: sb.meFg),
                       ),
-                      maxLines: null,
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(_name.isEmpty ? 'Your name' : _name, style: text.titleLarge),
+                          Text(
+                            [if (_work != null) _work!.label, 'on this phone only'].join(' · '),
+                            style: TextStyle(fontSize: 13, height: 18 / 13, color: sb.text2),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SbChevron(),
+                  ],
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 24),
+            const SbCap('Appearance'),
+            ValueListenableBuilder<Appearance>(
+              valueListenable: appearance,
+              builder: (context, look, _) => SbCard(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _ThemeCard(
+                            name: 'Ink',
+                            line: 'Calm and neutral',
+                            palette: SbPalette.inkLight,
+                            selected: look.theme == AppThemeName.ink,
+                            onTap: () => appearance.setTheme(AppThemeName.ink),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _ThemeCard(
+                            name: 'Espresso',
+                            line: 'Warm coffee tones',
+                            palette: SbPalette.espressoLight,
+                            selected: look.theme == AppThemeName.espresso,
+                            onTap: () => appearance.setTheme(AppThemeName.espresso),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    const _RowLabel('Light or dark'),
+                    const SizedBox(height: 8),
+                    SbSegmented<ThemeMode>(
+                      label: 'Light or dark',
+                      options: const [
+                        (ThemeMode.system, 'System'),
+                        (ThemeMode.light, 'Light'),
+                        (ThemeMode.dark, 'Dark'),
+                      ],
+                      selected: look.mode,
+                      onChanged: appearance.setMode,
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        const Expanded(child: _RowLabel('Language')),
+                        SizedBox(
+                          width: 200,
+                          child: SbSegmented<String>(
+                            label: 'Language',
+                            options: const [('en', 'English'), ('am', 'አማርኛ')],
+                            selected: _language,
+                            onChanged: _setLanguage,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
-                  const SizedBox(height: AppSpacing.sm),
-                  TextField(
-                    controller: _apiKeyController,
-                    obscureText: _isObscured,
-                    decoration: InputDecoration(
-                      hintText: 'Enter your API key',
-                      border: const OutlineInputBorder(),
-                      suffixIcon: IconButton(
-                        icon: Icon(_isObscured ? LucideIcons.eye : LucideIcons.eyeOff),
-                        onPressed: () {
-                          setState(() {
-                            _isObscured = !_isObscured;
-                          });
-                        },
+                ),
+              ),
+            ),
+
+            if (Platform.isAndroid) ...[
+              const SizedBox(height: 24),
+              const SbCap('Calls'),
+              SbCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(
+                            children: [
+                              SbIconTile(icon: LucideIcons.monitorSmartphone, tint: sb.tintCool),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const _RowLabel('Call card'),
+                                    Text(
+                                      "Who's calling and what you owe",
+                                      style: TextStyle(fontSize: 13, height: 18 / 13, color: sb.text2),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          SbSegmented<OverlayMode>(
+                            label: 'Show the call card for',
+                            options: const [
+                              (OverlayMode.knownOnly, 'People I know'),
+                              (OverlayMode.all, 'Everyone'),
+                              (OverlayMode.off, 'Off'),
+                            ],
+                            selected: _overlayMode,
+                            onChanged: _setOverlayMode,
+                          ),
+                        ],
                       ),
                     ),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  TextField(
-                    controller: _modelController,
-                    decoration: InputDecoration(
-                      labelText: 'Model',
-                      helperText: 'Default: ${_provider.defaultModel}',
-                      border: const OutlineInputBorder(),
+                    _SwitchRow(
+                      icon: LucideIcons.bellRing,
+                      tint: SbTint(sb.accentTint, sb.accent),
+                      title: 'After a call',
+                      subtitle: 'One quiet note to wrap it up',
+                      value: _promptAfterCall,
+                      onChanged: (v) async {
+                        setState(() => _promptAfterCall = v);
+                        await _settingsService.setPromptAfterCall(v);
+                      },
                     ),
+                    _SwitchRow(
+                      icon: LucideIcons.phoneMissed,
+                      tint: SbTint(sb.oweBg, sb.late),
+                      title: 'Missed calls',
+                      subtitle: 'Remind me to call back',
+                      value: _missedReminders,
+                      onChanged: (v) async {
+                        setState(() => _missedReminders = v);
+                        await _settingsService.setMissedCallReminders(v);
+                      },
+                    ),
+                    SbListRow(
+                      leading: SbIconTile(icon: LucideIcons.timer, tint: sb.faces.last),
+                      title: 'Skip short calls',
+                      subtitle: 'No wrap-up under this',
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _StepButton(
+                            icon: LucideIcons.minus,
+                            label: 'Shorter',
+                            onTap: _minCallDuration <= 0 ? null : () => _setSkip(_minCallDuration - 5),
+                          ),
+                          SizedBox(
+                            width: 48,
+                            child: Text(
+                              '$_minCallDuration s',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                fontFeatures: [FontFeature.tabularFigures()],
+                              ),
+                            ),
+                          ),
+                          _StepButton(
+                            icon: LucideIcons.plus,
+                            label: 'Longer',
+                            onTap: _minCallDuration >= 60 ? null : () => _setSkip(_minCallDuration + 5),
+                          ),
+                        ],
+                      ),
+                    ),
+                    SbListRow(
+                      leading: SbIconTile(icon: LucideIcons.phone, tint: sb.tintGreen),
+                      title: 'Call detection',
+                      subtitle: _callServiceRunning
+                          ? 'Listening for calls'
+                          : (_callPermissionGranted ? 'Off' : 'Needs phone permission'),
+                      onTap: _callServiceRunning ? _stopDetectionAsk : null,
+                      trailing: _callServiceRunning
+                          ? Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: BoxDecoration(color: sb.goodFg, shape: BoxShape.circle),
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'On',
+                                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: sb.goodFg),
+                                ),
+                              ],
+                            )
+                          : FilledButton(
+                              onPressed: () => _toggleCallDetection(true),
+                              style: FilledButton.styleFrom(
+                                minimumSize: const Size(0, 36),
+                                padding: const EdgeInsets.symmetric(horizontal: 14),
+                              ),
+                              child: const Text('Turn on'),
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            const SizedBox(height: 24),
+            const SbCap('Notes and AI'),
+            SbCard(
+              child: Column(
+                children: [
+                  SbListRow(
+                    first: true,
+                    leading: SbIconTile(icon: LucideIcons.sparkles, tint: sb.faces[4 % sb.faces.length]),
+                    title: 'AI helper',
+                    subtitle: _hasKey ? '${_provider.name} · key added' : 'Add a free key to find promises',
+                    trailing: const SbChevron(),
+                    onTap: () async {
+                      await Navigator.pushNamed(context, AppRoutes.aiHelper);
+                      await _load();
+                    },
                   ),
-                  const SizedBox(height: AppSpacing.md),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Visit ${_provider.keyUrl} to get a free key')),
-                            );
-                          },
-                          child: const Text('Get Key'),
+                  SbListRow(
+                    leading: SbIconTile(icon: LucideIcons.shieldCheck, tint: sb.faces.last),
+                    title: 'What AI sees',
+                    subtitle: 'Only the note you send it',
+                    trailing: const SbChevron(),
+                    onTap: () => showAiDataNotice(context, _provider),
+                  ),
+                  const OfflineDictationSettings(),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+              child: Text(
+                OfflineDictationSettings.about,
+                style: TextStyle(fontSize: 12, height: 17 / 12, color: sb.text2),
+              ),
+            ),
+
+            const SizedBox(height: 24),
+            const SbCap('Your data'),
+            SbCard(
+              child: Column(
+                children: [
+                  SbListRow(
+                    first: true,
+                    leading: SbIconTile(icon: LucideIcons.ban, tint: sb.faces.last),
+                    title: 'Ignored numbers',
+                    subtitle: 'Never shown a call card',
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '$_ignored',
+                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: sb.text2),
                         ),
-                      ),
-                      const SizedBox(width: AppSpacing.md),
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: _isChecking ? null : _saveKey,
-                          child: _isChecking
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : const Text('Save'),
-                        ),
-                      ),
-                    ],
+                        const SizedBox(width: 4),
+                        const SbChevron(),
+                      ],
+                    ),
+                    onTap: () async {
+                      await Navigator.pushNamed(context, AppRoutes.ignoredNumbers);
+                      await _load();
+                    },
+                  ),
+                  SbListRow(
+                    leading: SbIconTile(icon: LucideIcons.trash2, tint: SbTint(sb.oweBg, sb.late)),
+                    title: 'Delete everything',
+                    titleColor: sb.late,
+                    subtitle: 'People, notes, promises and calls',
+                    onTap: _resetLocalData,
                   ),
                 ],
               ),
             ),
-            ListTile(
-              leading: const Icon(LucideIcons.shieldCheck),
-              title: const Text('Data & privacy'),
-              subtitle: const Text('What AI Review sends, and to whom'),
-              trailing: const Icon(LucideIcons.chevronRight, size: 20),
-              onTap: () => showAiDataNotice(context, _provider),
-            ),
-            const Divider(height: 1),
 
-            // ── Offline dictation ───────────────────────────────────
-            _buildSectionHeader(context, 'Offline Amharic dictation'),
-            const OfflineDictationSettings(),
-            const Divider(height: 1),
-
-            // ── Call Detection Section ──────────────────────────────
-            _buildSectionHeader(context, 'Call Detection'),
-            if (!isAndroid)
-              const ListTile(
-                leading: Icon(LucideIcons.phoneOff, color: AppColors.textTertiary),
-                title: Text('Not available on iOS'),
-                subtitle: Text('Call detection requires Android'),
-              )
-            else ...[
-              SwitchListTile(
-                secondary: Icon(
-                  LucideIcons.phoneCall,
-                  color: _callServiceRunning ? AppColors.primary : AppColors.textTertiary,
+            if (kDebugMode) ...[
+              const SizedBox(height: 24),
+              const SbCap('Developer tools'),
+              SbCard(
+                child: Column(
+                  children: [
+                    SbListRow(
+                      first: true,
+                      leading: SbIconTile(icon: LucideIcons.database, tint: sb.faces.last),
+                      title: 'Load demo data',
+                      subtitle: 'Debug builds only: adds 8 fictional people',
+                      onTap: _loadDemoData,
+                    ),
+                    SbListRow(
+                      leading: SbIconTile(icon: LucideIcons.phoneForwarded, tint: sb.faces.last),
+                      title: 'Simulate Call',
+                      subtitle: 'Test call detection pipeline',
+                      onTap: _showSimulateCallDialog,
+                    ),
+                  ],
                 ),
-                title: const Text('Call Detection'),
-                subtitle: Text(
-                  _callServiceRunning
-                      ? 'Service running'
-                      : (_callPermissionGranted ? 'Service stopped' : 'Permission required'),
-                  style: TextStyle(
-                    color: _callServiceRunning ? AppColors.primary : AppColors.textSecondary,
-                    fontSize: 12,
-                  ),
-                ),
-                value: _callServiceRunning,
-                activeThumbColor: AppColors.primary,
-                onChanged: _toggleCallDetection,
               ),
-              if (!_callPermissionGranted)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-                  child: OutlinedButton.icon(
-                    icon: const Icon(LucideIcons.shield, size: 16),
-                    label: const Text('Grant Permissions'),
-                    onPressed: () async {
-                      final messenger = ScaffoldMessenger.of(context);
-                      final granted = await _callDetectionService.requestPermission();
-                      if (!mounted) return;
-                      setState(() => _callPermissionGranted = granted);
-                      messenger.showSnackBar(
-                        SnackBar(content: Text(granted ? 'Permissions granted' : 'Permissions denied')),
-                      );
-                    },
-                  ),
-                ),
-
-              if (_callPermissionGranted && _callServiceRunning) ...[
-                const Divider(),
-                SwitchListTile(
-                  title: const Text('Prompt after calls'),
-                  subtitle: const Text('Show a notification to add notes when a call ends'),
-                  value: _promptAfterCall,
-                  activeThumbColor: AppColors.primary,
-                  onChanged: (val) async {
-                    await _settingsService.setPromptAfterCall(val);
-                    if (mounted) setState(() => _promptAfterCall = val);
-                  },
-                ),
-                if (_promptAfterCall)
-                  Padding(
-                    padding: const EdgeInsets.only(left: AppSpacing.xl, right: AppSpacing.xl, bottom: AppSpacing.md),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Expanded(child: Text('Minimum call duration')),
-                            Text('$_minCallDuration seconds', style: const TextStyle(fontWeight: FontWeight.w500)),
-                          ],
-                        ),
-                        Slider(
-                          value: _minCallDuration.toDouble(),
-                          min: 0,
-                          max: 60,
-                          divisions: 12,
-                          activeColor: AppColors.primary,
-                          onChanged: (val) {
-                            setState(() => _minCallDuration = val.toInt());
-                          },
-                          onChangeEnd: (val) async {
-                            await _settingsService.setMinCallDuration(val.toInt());
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-              ],
-
-              const Divider(),
-              ...[
-                ListTile(
-                  title: const Text('Live call overlay'),
-                  subtitle: Text(switch (_overlayMode) {
-                    OverlayMode.knownOnly =>
-                      'Floating notes window for calls with your contacts. Unknown numbers get no overlay and no prompt.',
-                    OverlayMode.all => 'Floating notes window and prompt for every call, including unknown numbers.',
-                    OverlayMode.off => 'No floating window during calls.',
-                  }),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.md),
-                  child: SegmentedButton<OverlayMode>(
-                    segments: const [
-                      ButtonSegment(value: OverlayMode.knownOnly, label: Text('Contacts')),
-                      ButtonSegment(value: OverlayMode.all, label: Text('All calls')),
-                      ButtonSegment(value: OverlayMode.off, label: Text('Off')),
-                    ],
-                    selected: {_overlayMode},
-                    showSelectedIcon: false,
-                    onSelectionChanged: (selection) async {
-                      final mode = selection.first;
-                      await _settingsService.setOverlayMode(mode);
-                      if (mounted) setState(() => _overlayMode = mode);
-                    },
-                  ),
-                ),
-                if (_overlayMode != OverlayMode.off && !_overlayPermissionGranted)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-                    child: OutlinedButton.icon(
-                      icon: const Icon(LucideIcons.monitor, size: 16),
-                      label: const Text('Grant Overlay Permission'),
-                      onPressed: () async {
-                        try {
-                          await FlutterOverlayWindow.requestPermission();
-                          final granted = await FlutterOverlayWindow.isPermissionGranted();
-                          if (!context.mounted) return;
-                          setState(() => _overlayPermissionGranted = granted);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(granted ? 'Overlay permission granted' : 'Overlay permission denied'),
-                            ),
-                          );
-                        } catch (e) {
-                          if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Error: $e')),
-                          );
-                        }
-                      },
-                    ),
-                  ),
-              ],
             ],
-            const Divider(height: 1),
 
-            _buildSectionHeader(context, 'Developer Tools'),
-            if (kDebugMode)
-              ListTile(
-                leading: const Icon(LucideIcons.database),
-                title: const Text('Load demo data'),
-                subtitle: const Text('Debug builds only — adds 8 fictional contacts'),
-                trailing: const Icon(LucideIcons.chevronRight, size: 20),
-                onTap: _loadDemoData,
-              ),
-            if (isAndroid)
-              ListTile(
-                leading: const Icon(LucideIcons.phoneForwarded),
-                title: const Text('Simulate Call'),
-                subtitle: const Text('Test call detection pipeline'),
-                trailing: const Icon(LucideIcons.chevronRight, size: 20),
-                onTap: _showSimulateCallDialog,
-              ),
-            const Divider(height: 1),
-
-            _buildSectionHeader(context, 'Data'),
-            ListTile(
-              leading: const Icon(LucideIcons.trash2, color: AppColors.error),
-              title: const Text('Reset local data', style: TextStyle(color: AppColors.error)),
-              subtitle: const Text('Delete all contacts, notes, tasks, reminders and calls on this phone'),
-              onTap: _resetLocalData,
-            ),
-
-            const SizedBox(height: AppSpacing.xxl),
-            const Center(
-              child: Text(
-                'SmartBroker v1.0.0',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: AppColors.textTertiary, fontSize: 12),
+            const SizedBox(height: 24),
+            Center(
+              child: TextButton(
+                onPressed: () => showLicensePage(context: context, applicationName: 'SmartBroker'),
+                child: Text(
+                  'SmartBroker 1.0 · Open-source licences',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: sb.text2),
+                ),
               ),
             ),
-            // Space for the floating nav bar, so the last rows can scroll clear of it.
-            const SizedBox(height: 100),
           ],
         ),
       ),
     );
   }
+}
 
-  Widget _buildSectionHeader(BuildContext context, String title) {
-    return Padding(
-      padding: const EdgeInsets.only(left: AppSpacing.lg, top: AppSpacing.xl, bottom: AppSpacing.sm),
-      child: Text(
-        title,
-        style: Theme.of(context).textTheme.labelMedium?.copyWith(
-          color: AppColors.primary,
-          fontWeight: FontWeight.w600,
+class _RowLabel extends StatelessWidget {
+  const _RowLabel(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Text(
+    label,
+    style: const TextStyle(fontSize: 16, height: 22 / 16, fontWeight: FontWeight.w600),
+  );
+}
+
+/// Ink or Espresso, with a little picture of each.
+class _ThemeCard extends StatelessWidget {
+  const _ThemeCard({
+    required this.name,
+    required this.line,
+    required this.palette,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String name;
+  final String line;
+  final SbPalette palette;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final sb = context.sb;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: '$name theme, $line',
+      excludeSemantics: true,
+      child: SbPressable(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: selected ? sb.primary : sb.fill, width: selected ? 2 : 1),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                height: 76,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(color: palette.canvas, borderRadius: BorderRadius.circular(14)),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Container(
+                      height: 16,
+                      decoration: BoxDecoration(color: palette.surface, borderRadius: BorderRadius.circular(6)),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Container(
+                          width: 34,
+                          height: 14,
+                          decoration: BoxDecoration(color: palette.primary, borderRadius: BorderRadius.circular(99)),
+                        ),
+                        const SizedBox(width: 6),
+                        Container(
+                          width: 20,
+                          height: 14,
+                          decoration: BoxDecoration(
+                            color: palette.honey == palette.accent
+                                ? palette.accent
+                                : (name == 'Ink' ? palette.accent : palette.honey),
+                            borderRadius: BorderRadius.circular(99),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      style: const TextStyle(fontSize: 16, height: 22 / 16, fontWeight: FontWeight.w600),
+                    ),
+                    Text(
+                      line,
+                      style: TextStyle(fontSize: 13, height: 18 / 13, color: sb.text2),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
+      ),
+    );
+  }
+}
+
+class _SwitchRow extends StatelessWidget {
+  const _SwitchRow({
+    required this.icon,
+    required this.tint,
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final IconData icon;
+  final SbTint tint;
+  final String title;
+  final String subtitle;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return MergeSemantics(
+      child: SbListRow(
+        leading: SbIconTile(icon: icon, tint: tint),
+        title: title,
+        subtitle: subtitle,
+        trailing: Switch(value: value, onChanged: onChanged),
+        onTap: () => onChanged(!value),
+      ),
+    );
+  }
+}
+
+class _StepButton extends StatelessWidget {
+  const _StepButton({required this.icon, required this.label, required this.onTap});
+
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final sb = context.sb;
+    return Semantics(
+      button: true,
+      label: label,
+      excludeSemantics: true,
+      child: SbPressable(
+        onTap: onTap,
+        child: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(color: sb.fill, shape: BoxShape.circle),
+          child: Icon(icon, size: 16, color: onTap == null ? sb.text3 : sb.text),
+        ),
+      ),
+    );
+  }
+}
+
+/// Your name and work, from the profile row.
+class _ProfileSheet extends StatefulWidget {
+  const _ProfileSheet({required this.name, required this.work});
+
+  final String name;
+  final WorkType? work;
+
+  @override
+  State<_ProfileSheet> createState() => _ProfileSheetState();
+}
+
+class _ProfileSheetState extends State<_ProfileSheet> {
+  late final _name = TextEditingController(text: widget.name);
+  late WorkType? _work = widget.work;
+
+  @override
+  void dispose() {
+    _name.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final navigator = Navigator.of(context);
+    await ProfileService().setName(_name.text.trim());
+    if (_work != null) await ProfileService().setWork(_work!);
+    navigator.pop(true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + MediaQuery.viewInsetsOf(context).bottom),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('You', style: text.headlineSmall),
+          const SizedBox(height: 14),
+          TextField(
+            controller: _name,
+            autofocus: true,
+            textCapitalization: TextCapitalization.words,
+            decoration: const InputDecoration(hintText: 'Your name'),
+          ),
+          const SizedBox(height: 14),
+          const SbCap('Your work'),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final w in WorkType.values)
+                ChoiceChip(
+                  label: Text(w.label),
+                  selected: _work == w,
+                  onSelected: (_) => setState(() => _work = w),
+                ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          SbPrimaryButton(label: 'Save', onPressed: _save),
+        ],
       ),
     );
   }

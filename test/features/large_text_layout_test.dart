@@ -43,6 +43,11 @@ Future<void> _pumpScreen(WidgetTester tester, Widget screen, {Object? arguments,
     await Future<void>.delayed(const Duration(milliseconds: 500));
   });
   await tester.pump();
+  // A busy machine can take longer: wait up to 3 s more for the spinner to go.
+  for (var i = 0; i < 30 && find.byType(CircularProgressIndicator).evaluate().isNotEmpty; i++) {
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 100)));
+    await tester.pump();
+  }
 }
 
 Future<String> _seed() async {

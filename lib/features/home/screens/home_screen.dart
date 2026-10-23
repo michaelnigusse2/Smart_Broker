@@ -117,7 +117,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       Text(
                         _greeting(),
                         style: theme.textTheme.bodyMedium?.copyWith(
-                          color: AppColors.textSecondary,
+                          color: context.sb.text2,
                           letterSpacing: 0.2,
                         ),
                       ),
@@ -272,16 +272,16 @@ class _NotesSummary extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(AppSpacing.md),
         decoration: BoxDecoration(
-          color: AppColors.surface,
+          color: context.sb.surface,
           borderRadius: AppRadius.card,
-          border: Border.all(color: AppColors.border),
+          border: Border.all(color: context.sb.track),
         ),
         child: Row(
           children: [
-            Icon(LucideIcons.fileText, color: unprocessed > 0 ? AppColors.primary : AppColors.textSecondary),
+            Icon(LucideIcons.fileText, color: unprocessed > 0 ? context.sb.primary : context.sb.text2),
             const SizedBox(width: AppSpacing.md),
             Expanded(child: Text(subtitle, style: theme.textTheme.bodyMedium)),
-            const Icon(LucideIcons.chevronRight, size: 18, color: AppColors.textTertiary),
+            Icon(LucideIcons.chevronRight, size: 18, color: context.sb.text3),
           ],
         ),
       ),
@@ -304,19 +304,19 @@ class _StatPill extends StatelessWidget {
         vertical: 6,
       ),
       decoration: BoxDecoration(
-        color: AppColors.surfaceElevated,
+        color: context.sb.fill,
         borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 12, color: AppColors.textSecondary),
+          Icon(icon, size: 12, color: context.sb.text2),
           const SizedBox(width: 4),
           Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 12,
-              color: AppColors.textSecondary,
+              color: context.sb.text2,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -360,7 +360,7 @@ class _ReminderRow extends StatelessWidget {
                 width: 3,
                 height: 36,
                 decoration: BoxDecoration(
-                  color: isOverdue ? AppColors.error : AppColors.primary,
+                  color: isOverdue ? context.sb.late : context.sb.primary,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -379,14 +379,14 @@ class _ReminderRow extends StatelessWidget {
                     Text(
                       DateFormat.MMMd().add_jm().format(dateTime),
                       style: theme.textTheme.labelSmall?.copyWith(
-                        color: AppColors.textSecondary,
+                        color: context.sb.text2,
                       ),
                     ),
                   ],
                 ),
               ),
               const SizedBox(width: AppSpacing.sm),
-              const Icon(LucideIcons.chevronRight, size: 16, color: AppColors.textTertiary),
+              Icon(LucideIcons.chevronRight, size: 16, color: context.sb.text3),
             ],
           ),
         ),
@@ -426,13 +426,13 @@ class _ContactRow extends StatelessWidget {
             // Initials avatar
             CircleAvatar(
               radius: 18,
-              backgroundColor: AppColors.surfaceElevated,
+              backgroundColor: context.sb.fill,
               child: Text(
                 name.isNotEmpty ? name[0].toUpperCase() : '?',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
-                  color: AppColors.textPrimary,
+                  color: context.sb.text,
                 ),
               ),
             ),
@@ -460,7 +460,7 @@ class _ContactRow extends StatelessWidget {
                     width: 6,
                     height: 6,
                     decoration: BoxDecoration(
-                      color: hasOverdueTasks ? Colors.orange : AppColors.primary,
+                      color: hasOverdueTasks ? Colors.orange : context.sb.primary,
                       shape: BoxShape.circle,
                     ),
                   ),

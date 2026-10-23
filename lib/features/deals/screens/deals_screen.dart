@@ -32,10 +32,10 @@ class DealsScreen extends StatelessWidget {
                       width: 44,
                       height: 44,
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF4E3C4),
+                        color: context.sb.tintGold.bg,
                         borderRadius: BorderRadius.circular(13),
                       ),
-                      child: const Icon(LucideIcons.briefcase, size: 22, color: Color(0xFF7A4B0F)),
+                      child: Icon(LucideIcons.briefcase, size: 22, color: context.sb.tintGold.fg),
                     ),
                     const SizedBox(height: 16),
                     Text('Your deals will live here', style: text.titleMedium),

@@ -30,7 +30,7 @@ class SectionHeader extends StatelessWidget {
               title,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.titleMedium?.copyWith(
-                color: AppColors.textPrimary,
+                color: context.sb.text,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -46,10 +46,10 @@ class SectionHeader extends StatelessWidget {
                   children: [
                     Text(
                       actionLabel!,
-                      style: theme.textTheme.labelMedium?.copyWith(color: AppColors.textSecondary),
+                      style: theme.textTheme.labelMedium?.copyWith(color: context.sb.text2),
                     ),
                     const SizedBox(width: AppSpacing.xs),
-                    Icon(LucideIcons.chevronRight, size: 14, color: AppColors.textSecondary),
+                    Icon(LucideIcons.chevronRight, size: 14, color: context.sb.text2),
                   ],
                 ),
               ),

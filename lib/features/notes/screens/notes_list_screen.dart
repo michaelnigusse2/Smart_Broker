@@ -88,7 +88,7 @@ class _NotesListScreenState extends State<NotesListScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete', style: TextStyle(color: AppColors.error)),
+            child: Text('Delete', style: TextStyle(color: context.sb.late)),
           ),
         ],
       ),
@@ -132,7 +132,7 @@ class _NotesListScreenState extends State<NotesListScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.sb.canvas,
       appBar: AppBar(
         title: const Text('Notes'),
         elevation: 0,
@@ -146,17 +146,17 @@ class _NotesListScreenState extends State<NotesListScreen> {
                 controller: _searchController,
                 decoration: InputDecoration(
                   hintText: 'Search notes...',
-                  prefixIcon: const Icon(LucideIcons.search, color: AppColors.textTertiary),
+                  prefixIcon: Icon(LucideIcons.search, color: context.sb.text3),
                   suffixIcon: _searchQuery.isNotEmpty
                       ? IconButton(
-                          icon: const Icon(LucideIcons.x, color: AppColors.textTertiary),
+                          icon: Icon(LucideIcons.x, color: context.sb.text3),
                           onPressed: () {
                             _searchController.clear();
                           },
                         )
                       : null,
                   filled: true,
-                  fillColor: AppColors.surface,
+                  fillColor: context.sb.surface,
                   border: OutlineInputBorder(
                     borderRadius: AppRadius.card,
                     borderSide: BorderSide.none,
@@ -172,7 +172,7 @@ class _NotesListScreenState extends State<NotesListScreen> {
                   ? Center(
                       child: Text(
                         _searchQuery.isNotEmpty ? 'No notes found' : 'No notes yet',
-                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: AppColors.textSecondary),
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: context.sb.text2),
                       ),
                     )
                   : RefreshIndicator(
@@ -194,7 +194,7 @@ class _NotesListScreenState extends State<NotesListScreen> {
                               child: Text(
                                 item,
                                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                  color: AppColors.textTertiary,
+                                  color: context.sb.text3,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
@@ -217,12 +217,12 @@ class _NotesListScreenState extends State<NotesListScreen> {
                               },
                               background: Container(
                                 decoration: BoxDecoration(
-                                  color: AppColors.error,
+                                  color: context.sb.late,
                                   borderRadius: AppRadius.card,
                                 ),
                                 alignment: Alignment.centerRight,
                                 padding: const EdgeInsets.only(right: AppSpacing.xl),
-                                child: const Icon(LucideIcons.trash2, color: Colors.white),
+                                child: Icon(LucideIcons.trash2, color: context.sb.onPrimary),
                               ),
                               child: InkWell(
                                 onTap: () {
@@ -236,7 +236,7 @@ class _NotesListScreenState extends State<NotesListScreen> {
                                 child: Container(
                                   padding: const EdgeInsets.all(AppSpacing.lg),
                                   decoration: BoxDecoration(
-                                    color: AppColors.surfaceElevated,
+                                    color: context.sb.fill,
                                     borderRadius: AppRadius.card,
                                   ),
                                   child: Column(
@@ -246,8 +246,8 @@ class _NotesListScreenState extends State<NotesListScreen> {
                                         children: [
                                           CircleAvatar(
                                             radius: 12,
-                                            backgroundColor: AppColors.primary.withValues(alpha: 0.1),
-                                            foregroundColor: AppColors.primary,
+                                            backgroundColor: context.sb.primary.withValues(alpha: 0.1),
+                                            foregroundColor: context.sb.primary,
                                             child: Text(
                                               noteContact.contactInitials,
                                               style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -269,7 +269,7 @@ class _NotesListScreenState extends State<NotesListScreen> {
                                             _formatTime(note.createdAt),
                                             style: Theme.of(
                                               context,
-                                            ).textTheme.labelSmall?.copyWith(color: AppColors.textTertiary),
+                                            ).textTheme.labelSmall?.copyWith(color: context.sb.text3),
                                           ),
                                         ],
                                       ),
@@ -279,7 +279,7 @@ class _NotesListScreenState extends State<NotesListScreen> {
                                         style: note.aiSummary.isEmpty
                                             ? Theme.of(
                                                 context,
-                                              ).textTheme.bodyMedium?.copyWith(color: AppColors.textTertiary)
+                                              ).textTheme.bodyMedium?.copyWith(color: context.sb.text3)
                                             : Theme.of(context).textTheme.bodyMedium,
                                         maxLines: 2,
                                         overflow: TextOverflow.ellipsis,
@@ -289,7 +289,7 @@ class _NotesListScreenState extends State<NotesListScreen> {
                                         '"${note.rawText}"',
                                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                           fontStyle: FontStyle.italic,
-                                          color: AppColors.textSecondary,
+                                          color: context.sb.text2,
                                         ),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,

@@ -15,6 +15,9 @@ class AppRoutes {
   static const String reminderDetail = '/reminder-detail';
   static const String settings = '/settings';
   static const String calendar = '/calendar';
+  static const String newNumbers = '/new-numbers';
+  static const String ignoredNumbers = '/ignored-numbers';
+  static const String aiHelper = '/ai-helper';
 
   /// No leading slash: as the first route it's pushed alone, not on top of '/'.
   static const String onboarding = 'onboarding';

@@ -17,7 +17,7 @@ abstract class Migration {
   Future<void> up(DatabaseExecutor db);
 }
 
-const List<Migration> migrations = [MigrationV2(), MigrationV3()];
+const List<Migration> migrations = [MigrationV2(), MigrationV3(), MigrationV4()];
 
 /// Runs every migration after [from] up to and including [to], in order.
 Future<void> runMigrations(DatabaseExecutor db, int from, int to) async {
@@ -26,6 +26,71 @@ Future<void> runMigrations(DatabaseExecutor db, int from, int to) async {
   for (final step in steps) {
     AppLog.i('Database', 'migrating to v${step.version}: ${step.description}');
     await step.up(db);
+  }
+}
+
+/// v4: a person can have more than one number; missed calls you said "Not
+/// needed" to; reminders know when they're a call back; and contacts that
+/// the old call logging made for unknown numbers (named by the number, with
+/// nothing added) become New numbers instead.
+class MigrationV4 extends Migration {
+  const MigrationV4();
+
+  @override
+  int get version => 4;
+
+  @override
+  String get description => 'other phones, call backs, reminder kinds, new numbers';
+
+  @override
+  Future<void> up(DatabaseExecutor db) async {
+    await db.execute("ALTER TABLE contacts ADD COLUMN otherPhones TEXT NOT NULL DEFAULT ''");
+    await db.execute("ALTER TABLE contacts ADD COLUMN otherPhoneKeys TEXT NOT NULL DEFAULT ''");
+    await db.execute('ALTER TABLE contacts ADD COLUMN callBackClearedAt INTEGER');
+    await db.execute("ALTER TABLE reminders ADD COLUMN kind TEXT NOT NULL DEFAULT ''");
+    for (final statement in indexesV4) {
+      await db.execute(statement);
+    }
+    await moveNumberOnlyContacts(db);
+  }
+
+  /// Contacts called by their own number, with no details, notes, promises
+  /// or reminders, were made automatically for unknown callers. Their calls
+  /// go to New numbers and the contact goes away.
+  static Future<void> moveNumberOnlyContacts(DatabaseExecutor db) async {
+    final rows = await db.rawQuery("""
+      SELECT c.id, c.name, c.phoneNumber, c.phoneKey FROM contacts c
+      WHERE TRIM(COALESCE(c.email, '')) = '' AND TRIM(COALESCE(c.company, '')) = '' AND TRIM(COALESCE(c.role, '')) = ''
+        AND NOT EXISTS (SELECT 1 FROM notes n WHERE n.contactId = c.id)
+        AND NOT EXISTS (SELECT 1 FROM todos t WHERE t.contactId = c.id)
+        AND NOT EXISTS (SELECT 1 FROM reminders r WHERE r.contactId = c.id)""");
+    var moved = 0;
+    for (final row in rows) {
+      final name = (row['name'] as String? ?? '').trim();
+      final phone = row['phoneNumber'] as String? ?? '';
+      final key = row['phoneKey'] as String? ?? '';
+      if (key.isEmpty || PhoneContact.normalizePhoneNumber(name) != name || PhoneContact.matchKey(name) != key) {
+        continue;
+      }
+      final calls = await db.query('calls', where: 'contactId = ?', whereArgs: [row['id']]);
+      for (final call in calls) {
+        await db.insert('unassigned_calls', {
+          'id': call['id'],
+          'phoneNumber': phone,
+          'phoneKey': key,
+          'type': call['type'],
+          'duration': call['duration'],
+          'timestamp': call['timestamp'],
+          'status': 'new',
+          'note': '',
+          'createdAt': call['timestamp'],
+        }, conflictAlgorithm: ConflictAlgorithm.ignore);
+      }
+      await db.delete('calls', where: 'contactId = ?', whereArgs: [row['id']]);
+      await db.delete('contacts', where: 'id = ?', whereArgs: [row['id']]);
+      moved++;
+    }
+    if (moved > 0) AppLog.i('Database', 'moved $moved number-only contact(s) to New numbers');
   }
 }
 

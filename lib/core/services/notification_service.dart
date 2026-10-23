@@ -5,14 +5,15 @@ import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'dart:io' show Platform;
-import '../../models/reminder.dart';
-import '../repositories/reminder_repository.dart';
-import '../../models/contact.dart';
 import '../../models/call_entry.dart';
+import '../../models/contact.dart';
+import '../../models/reminder.dart';
 import '../constants/app_routes.dart';
-import 'call_overlay_state.dart';
-import 'app_log.dart';
+import '../repositories/reminder_repository.dart';
+import '../utils/phone_format.dart';
 import '../utils/reminder_time.dart';
+import 'app_log.dart';
+import 'call_overlay_state.dart';
 import 'wrap_up_store.dart';
 
 /// Handles the after-call notification's buttons while the app isn't open.
@@ -54,7 +55,7 @@ class NotificationService {
     }
 
     // 2. Android settings
-    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const androidSettings = AndroidInitializationSettings('@drawable/ic_stat_sb');
 
     // 3. iOS settings — explicitly request all three permissions
     const darwinSettings = DarwinInitializationSettings(
@@ -95,6 +96,10 @@ class NotificationService {
   /// Returns true when the response needs nothing more (no screen to open).
   static Future<bool> handleAction(NotificationResponse response) async {
     final payload = response.payload;
+    // Missed calls and new numbers: "Not now" just closes the notification.
+    if (payload != null && (payload.startsWith('/call-back') || payload.startsWith('/new-number'))) {
+      return response.actionId == 'later';
+    }
     if (payload == null || !payload.startsWith('/add-note')) return false;
     final callId = Uri.parse(payload).queryParameters['callId'];
     switch (response.actionId) {
@@ -110,12 +115,43 @@ class NotificationService {
     }
   }
 
+  /// The app was opened from a notification while it wasn't running: act on
+  /// that tap or button once the app is up (the plugin only reports live taps).
+  Future<void> handleLaunchNotification() async {
+    try {
+      final details = await _plugin.getNotificationAppLaunchDetails();
+      final response = details?.notificationResponse;
+      if (details?.didNotificationLaunchApp != true || response == null) return;
+      await _onResponse(response);
+    } catch (e) {
+      AppLog.w('Notifications', 'could not read the launch notification', e);
+    }
+  }
+
+  /// Set by the app: what a missed-call notification does when tapped.
+  /// `action` is 'callback' (dial), 'remind' (pick a time) or 'open'.
+  static void Function(String contactId, String action)? onCallBack;
+
+  /// Set by the app: a tap on a new-number notification opens "Who was this?".
+  static void Function(String phoneKey)? onNewNumber;
+
   Future<void> _onResponse(NotificationResponse response) async {
     // The moments marked during the call, read before the call leaves the
     // wrap-up list, so the note screen can show them.
     final callId = response.payload == null ? null : Uri.tryParse(response.payload!)?.queryParameters['callId'];
     final wrapUp = callId == null ? null : await WrapUpStore.find(callId);
     if (await handleAction(response)) return;
+    final payload = response.payload ?? '';
+    if (payload.startsWith('/call-back')) {
+      final contactId = Uri.parse(payload).queryParameters['contactId'];
+      if (contactId != null) onCallBack?.call(contactId, response.actionId ?? 'open');
+      return;
+    }
+    if (payload.startsWith('/new-number')) {
+      final key = Uri.parse(payload).queryParameters['key'];
+      if (key != null) onNewNumber?.call(key);
+      return;
+    }
     if (response.payload != null && response.payload!.startsWith('/add-note')) {
       // A note already written in the call overlay goes straight to AI Review.
       final pending = await CallOverlayState.takePendingReview();
@@ -189,6 +225,87 @@ class NotificationService {
         path: '/add-note',
         queryParameters: {'contactId': contact.id, 'duration': length, 'callId': call.id},
       ).toString(),
+    );
+  }
+
+  static String _clock(DateTime t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+  static int _missedId(String contactId) => stableNotificationId('missed:$contactId');
+
+  /// One quiet notification when you miss someone you know: "Missed Selam ·
+  /// 10:42", how many times they called today and what you owe them, with
+  /// Call back / Remind me / Not now. A second miss replaces the first.
+  Future<void> showMissedCallPrompt(Contact contact, CallEntry call, {String owe = '', int missedToday = 1}) async {
+    const details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        'missed_calls',
+        'Missed calls',
+        channelDescription: 'One quiet note when you miss someone you know, to call them back',
+        importance: Importance.high,
+        priority: Priority.high,
+        playSound: false,
+        enableVibration: false,
+        category: AndroidNotificationCategory.missedCall,
+        actions: [
+          AndroidNotificationAction('callback', 'Call back', showsUserInterface: true, cancelNotification: true),
+          AndroidNotificationAction('remind', 'Remind me', showsUserInterface: true, cancelNotification: true),
+          AndroidNotificationAction('later', 'Not now', cancelNotification: true),
+        ],
+      ),
+      iOS: DarwinNotificationDetails(presentAlert: true, presentSound: false),
+    );
+    final first = contact.name.trim().split(RegExp(r'\s+')).first;
+    final parts = [
+      if (missedToday == 2) 'Second call today',
+      if (missedToday > 2) '$missedToday calls today',
+      if (owe.isNotEmpty) 'you owe: $owe',
+    ];
+    var body = parts.join(' · ');
+    body = body.isEmpty ? 'Call back now, or pick a time' : '${body[0].toUpperCase()}${body.substring(1)}';
+    await _plugin.show(
+      id: _missedId(contact.id),
+      title: 'Missed $first · ${_clock(call.timestamp)}',
+      body: body,
+      notificationDetails: details,
+      payload: Uri(path: '/call-back', queryParameters: {'contactId': contact.id}).toString(),
+    );
+  }
+
+  /// Takes the missed-call notification away (you've talked since).
+  Future<void> cancelMissedCallPrompt(String contactId) => _plugin.cancel(id: _missedId(contactId));
+
+  /// After a real call with a number that isn't one of your people: "New
+  /// number · 2:14 · Who was this?", with Save / Not now.
+  Future<void> showNewNumberPrompt({
+    required String phoneNumber,
+    required String phoneKey,
+    required Duration duration,
+  }) async {
+    const details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        'after_call',
+        'After calls',
+        channelDescription: 'One silent note after each call, to wrap it up',
+        importance: Importance.high,
+        priority: Priority.high,
+        playSound: false,
+        enableVibration: false,
+        category: AndroidNotificationCategory.reminder,
+        actions: [
+          AndroidNotificationAction('save', 'Save', showsUserInterface: true, cancelNotification: true),
+          AndroidNotificationAction('later', 'Not now', cancelNotification: true),
+        ],
+      ),
+      iOS: DarwinNotificationDetails(presentAlert: true, presentSound: false),
+    );
+    final seconds = duration.inSeconds;
+    final length = '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
+    await _plugin.show(
+      id: stableNotificationId('new:$phoneKey'),
+      title: 'New number · $length',
+      body: '${prettyPhone(phoneNumber)} · Who was this? Save them in a tap',
+      notificationDetails: details,
+      payload: Uri(path: '/new-number', queryParameters: {'key': phoneKey}).toString(),
     );
   }
 

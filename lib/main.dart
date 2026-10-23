@@ -9,6 +9,7 @@ import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 
 import 'core/constants/app_routes.dart';
 import 'core/database/seed_data.dart';
+import 'core/repositories/contact_repository.dart';
 import 'core/services/app_log.dart';
 import 'core/services/call_detection_service.dart';
 import 'core/services/call_matching_service.dart';
@@ -17,14 +18,18 @@ import 'core/services/notification_service.dart';
 import 'core/services/profile_service.dart';
 import 'core/services/settings_service.dart';
 import 'core/theme/app_theme.dart';
+import 'core/theme/appearance.dart';
 import 'core/transcription/licences.dart';
 import 'core/widgets/sheet_route.dart';
 import 'features/calendar/screens/calendar_screen.dart';
 import 'features/calendar/screens/reminder_detail_screen.dart';
 import 'features/calls/screens/call_overlay_screen.dart';
+import 'features/calls/widgets/call_back_sheets.dart';
 import 'features/contacts/screens/contact_detail_screen.dart';
 import 'features/contacts/screens/contact_form_screen.dart';
+import 'features/contacts/screens/new_numbers_screen.dart';
 import 'features/contacts/screens/phone_contact_detail_screen.dart';
+import 'features/contacts/widgets/who_was_this_sheet.dart';
 import 'features/home/screens/main_shell.dart';
 import 'features/home/screens/startup_error_screen.dart';
 import 'features/notes/screens/add_note_screen.dart';
@@ -32,6 +37,7 @@ import 'features/notes/screens/ai_review_screen.dart';
 import 'features/notes/screens/note_detail_screen.dart';
 import 'features/notes/screens/notes_list_screen.dart';
 import 'features/onboarding/screens/onboarding_screen.dart';
+import 'features/settings/screens/ai_helper_screen.dart';
 import 'features/settings/screens/settings_screen.dart';
 import 'features/todos/screens/tasks_screen.dart';
 
@@ -40,7 +46,7 @@ void main() {
     WidgetsFlutterBinding.ensureInitialized();
     // Draw behind the status and navigation bars on every Android version.
     unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
-    SystemChrome.setSystemUIOverlayStyle(AppTheme.systemBars(Brightness.light));
+    SystemChrome.setSystemUIOverlayStyle(AppTheme.systemBars(PlatformDispatcher.instance.platformBrightness));
     FlutterError.onError = (details) {
       FlutterError.presentError(details);
       // Debug builds log the full report (it names the widget and source line,
@@ -64,6 +70,7 @@ Future<void> _startApp() async {
     return;
   }
   var onboarded = true;
+  await AppearanceController.instance.load();
   try {
     await ProfileService().load();
     onboarded = await ProfileService().isOnboarded();
@@ -120,12 +127,16 @@ void _listenToOverlayOnce() {
 /// Entry point for the call overlay window. flutter_overlay_window looks this
 /// function up by name in the app's main library, so it must live in this file.
 @pragma('vm:entry-point')
-void overlayMain() {
+Future<void> overlayMain() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // The call card follows the theme picked in Settings.
+  final appearance = await AppearanceController.read();
   runApp(
     MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme,
+      theme: AppTheme.light(appearance.theme),
+      darkTheme: AppTheme.dark(appearance.theme),
+      themeMode: appearance.mode,
       home: const CallOverlayScreen(),
     ),
   );
@@ -176,7 +187,53 @@ class _SmartBrokerAppState extends State<SmartBrokerApp> with WidgetsBindingObse
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) => openPendingAiReview());
+    NotificationService.onCallBack = _onCallBackNotification;
+    NotificationService.onNewNumber = _onNewNumberNotification;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      openPendingAiReview();
+      NotificationService().handleLaunchNotification();
+    });
+  }
+
+  /// Waits for the navigator (the app may still be starting) and a context
+  /// under it, for sheets opened from notifications.
+  static Future<BuildContext?> _navigatorContext() async {
+    for (var i = 0; i < 40; i++) {
+      final context = AppRoutes.globalNavigatorKey.currentContext;
+      if (context != null && context.mounted) return context;
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+    return null;
+  }
+
+  /// Missed-call notification: Call back dials, Remind me picks a time, a
+  /// tap opens the person.
+  static Future<void> _onCallBackNotification(String contactId, String action) async {
+    try {
+      final contact = await ContactRepository().getById(contactId);
+      if (contact == null) return;
+      switch (action) {
+        case 'callback':
+          await NotificationService().cancelMissedCallPrompt(contactId);
+          await callBackNow(contact);
+        case 'remind':
+          final context = await _navigatorContext();
+          if (context == null || !context.mounted) return;
+          await showRemindCallBackSheet(context, contact);
+        default:
+          await _navigatorContext(); // let the app finish starting
+          AppRoutes.globalNavigatorKey.currentState?.pushNamed(AppRoutes.contactDetail, arguments: contactId);
+      }
+    } catch (e, st) {
+      AppLog.e('Notifications', 'could not act on a missed call', e, st);
+    }
+  }
+
+  /// New-number notification: Save (or a tap) asks "Who was this?".
+  static Future<void> _onNewNumberNotification(String phoneKey) async {
+    final context = await _navigatorContext();
+    if (context == null || !context.mounted) return;
+    await showWhoWasThisSheet(context, phoneKey);
   }
 
   @override
@@ -192,10 +249,19 @@ class _SmartBrokerAppState extends State<SmartBrokerApp> with WidgetsBindingObse
 
   @override
   Widget build(BuildContext context) {
+    return ValueListenableBuilder<Appearance>(
+      valueListenable: AppearanceController.instance,
+      builder: (context, appearance, _) => _app(appearance),
+    );
+  }
+
+  Widget _app(Appearance appearance) {
     return MaterialApp(
       title: 'SmartBroker',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme,
+      theme: AppTheme.light(appearance.theme),
+      darkTheme: AppTheme.dark(appearance.theme),
+      themeMode: appearance.mode,
       // Keeps the status and navigation bars see-through on every frame, so
       // nothing (a plugin, an older Android default) can turn them black.
       builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
@@ -216,6 +282,9 @@ class _SmartBrokerAppState extends State<SmartBrokerApp> with WidgetsBindingObse
         AppRoutes.reminderDetail: (context) => const ReminderDetailScreen(),
         AppRoutes.settings: (context) => const SettingsScreen(),
         AppRoutes.calendar: (context) => const CalendarScreen(),
+        AppRoutes.newNumbers: (context) => const NewNumbersScreen(),
+        AppRoutes.ignoredNumbers: (context) => const IgnoredNumbersScreen(),
+        AppRoutes.aiHelper: (context) => const AiHelperScreen(),
         AppRoutes.onboarding: (context) => const OnboardingScreen(),
       },
       // The quick note comes up as a sheet over the screen it's opened from.

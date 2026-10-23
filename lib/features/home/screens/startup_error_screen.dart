@@ -19,7 +19,8 @@ class StartupErrorApp extends StatelessWidget {
     return MaterialApp(
       title: 'SmartBroker',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme,
+      theme: AppTheme.light(AppThemeName.ink),
+      darkTheme: AppTheme.dark(AppThemeName.ink),
       home: StartupErrorScreen(error: error, onRetry: onRetry),
     );
   }
@@ -54,7 +55,7 @@ class _StartupErrorScreenState extends State<StartupErrorScreen> {
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text(action, style: const TextStyle(color: AppColors.error)),
+            child: Text(action, style: TextStyle(color: context.sb.late)),
           ),
         ],
       ),
@@ -95,7 +96,7 @@ class _StartupErrorScreenState extends State<StartupErrorScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SizedBox(height: AppSpacing.xxl),
-              const Icon(LucideIcons.alertTriangle, size: 40, color: AppColors.error),
+              Icon(LucideIcons.alertTriangle, size: 40, color: context.sb.late),
               const SizedBox(height: AppSpacing.lg),
               Text(
                 "SmartBroker couldn't start",
@@ -103,18 +104,18 @@ class _StartupErrorScreenState extends State<StartupErrorScreen> {
                 style: Theme.of(context).textTheme.headlineSmall,
               ),
               const SizedBox(height: AppSpacing.sm),
-              const Text(
+              Text(
                 'Your local data could not be opened. Try again first. '
                 'If it keeps failing, you can reset the local data.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: AppColors.textSecondary),
+                style: TextStyle(color: context.sb.text2),
               ),
               const SizedBox(height: AppSpacing.xl),
               Expanded(
                 child: Container(
                   padding: const EdgeInsets.all(AppSpacing.md),
                   decoration: BoxDecoration(
-                    color: AppColors.surfaceElevated,
+                    color: context.sb.fill,
                     borderRadius: BorderRadius.circular(AppRadius.md),
                   ),
                   child: SingleChildScrollView(
@@ -137,7 +138,7 @@ class _StartupErrorScreenState extends State<StartupErrorScreen> {
               const SizedBox(height: AppSpacing.sm),
               OutlinedButton(
                 onPressed: _busy ? null : _reset,
-                style: OutlinedButton.styleFrom(foregroundColor: AppColors.error),
+                style: OutlinedButton.styleFrom(foregroundColor: context.sb.late),
                 child: const Text('Reset local data'),
               ),
             ],

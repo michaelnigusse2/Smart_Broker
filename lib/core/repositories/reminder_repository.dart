@@ -72,6 +72,28 @@ class ReminderRepository {
     return maps.map((m) => Reminder.fromMap(m)).toList();
   }
 
+  /// Open "call back" reminders for [contactId].
+  Future<List<Reminder>> openCallBacks(String contactId) async {
+    final db = await _db.database;
+    final maps = await db.query(
+      'reminders',
+      where: 'completed = 0 AND kind = ? AND contactId = ?',
+      whereArgs: [Reminder.callBack, contactId],
+      orderBy: 'dateTime ASC',
+    );
+    return maps.map((m) => Reminder.fromMap(m)).toList();
+  }
+
+  /// Marks [contactId]'s call-back reminders done (you've talked, or said
+  /// "Not needed") and returns them, so their alerts can be cancelled.
+  Future<List<Reminder>> completeCallBacks(String contactId) async {
+    final open = await openCallBacks(contactId);
+    for (final r in open) {
+      await update(r.copyWith(completed: true));
+    }
+    return open;
+  }
+
   Future<String> insert(Reminder reminder) async {
     final db = await _db.database;
     final id = reminder.id.isEmpty ? _uuid.v4() : reminder.id;

@@ -27,7 +27,7 @@ Future<bool> showAiDataNotice(
     context: context,
     barrierDismissible: !askForConsent,
     builder: (ctx) => AlertDialog(
-      icon: const Icon(LucideIcons.shieldCheck, color: AppColors.primary),
+      icon: Icon(LucideIcons.shieldCheck, color: context.sb.primary),
       title: const Text('How AI Review uses your notes'),
       content: SingleChildScrollView(
         child: Column(
@@ -47,7 +47,7 @@ Future<bool> showAiDataNotice(
             ),
             const SizedBox(height: AppSpacing.md),
             Text("${provider.name}'s data policy:", style: const TextStyle(fontWeight: FontWeight.w600)),
-            SelectableText(provider.privacyUrl, style: const TextStyle(color: AppColors.primary)),
+            SelectableText(provider.privacyUrl, style: TextStyle(color: context.sb.primary)),
           ],
         ),
       ),

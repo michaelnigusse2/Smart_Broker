@@ -7,7 +7,7 @@
 library;
 
 /// Bump together with a new `Migration` in `migrations.dart`.
-const int schemaVersion = 3;
+const int schemaVersion = 4;
 
 const List<String> createTables = [
   '''
@@ -21,7 +21,10 @@ const List<String> createTables = [
     lastInteraction INTEGER NOT NULL,
     pendingTasksCount INTEGER DEFAULT 0,
     avatarUrl TEXT DEFAULT '',
-    phoneKey TEXT NOT NULL DEFAULT ''
+    phoneKey TEXT NOT NULL DEFAULT '',
+    otherPhones TEXT NOT NULL DEFAULT '',
+    otherPhoneKeys TEXT NOT NULL DEFAULT '',
+    callBackClearedAt INTEGER
   )''',
   '''
   CREATE TABLE notes (
@@ -56,6 +59,7 @@ const List<String> createTables = [
     dateTime INTEGER NOT NULL,
     completed INTEGER NOT NULL DEFAULT 0,
     createdAt INTEGER NOT NULL,
+    kind TEXT NOT NULL DEFAULT '',
     FOREIGN KEY (contactId) REFERENCES contacts(id) ON DELETE CASCADE,
     FOREIGN KEY (noteId) REFERENCES notes(id) ON DELETE SET NULL
   )''',
@@ -71,7 +75,8 @@ const List<String> createTables = [
   createUnassignedCallsV2,
 ];
 
-/// Calls from numbers that aren't contacts yet (used by the unassigned-calls inbox).
+/// Calls from numbers that aren't contacts yet: "New numbers" on People.
+/// `status` is 'new' (waiting to be saved) or 'ignored' ("Not a client").
 const String createUnassignedCallsV2 = '''
   CREATE TABLE unassigned_calls (
     id TEXT PRIMARY KEY,
@@ -101,4 +106,9 @@ const List<String> indexesV2 = [
   'CREATE INDEX idx_unassigned_status ON unassigned_calls(status, timestamp)',
 ];
 
-const List<String> createSchema = [...createTables, ...indexesV2];
+/// Indexes added in version 4: new numbers are grouped by number.
+const List<String> indexesV4 = [
+  'CREATE INDEX idx_unassigned_key ON unassigned_calls(phoneKey, timestamp)',
+];
+
+const List<String> createSchema = [...createTables, ...indexesV2, ...indexesV4];

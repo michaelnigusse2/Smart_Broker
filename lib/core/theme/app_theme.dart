@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-/// Espresso: a cream canvas, espresso text and buttons, caramel accents.
+/// The app's colours, read with `context.sb`. Two themes, each with a light
+/// and a dark version:
 ///
-/// New screens read colours from [SbPalette] (`context.sb`), which has a light
-/// and a dark version. [AppColors] keeps the light values for screens that
-/// haven't been redesigned yet; once every screen uses `context.sb` the app
-/// can follow the phone's dark mode.
+/// * Ink (the default): near-black ink on a soft grey page, white cards and
+///   one quiet blue accent.
+/// * Espresso: a cream canvas, espresso text and buttons, caramel accents.
+///
+/// Layouts, type and spacing are the same in every palette; only colour
+/// changes. People's faces take their tint from the palette too.
 @immutable
 class SbPalette extends ThemeExtension<SbPalette> {
   const SbPalette({
@@ -29,6 +32,15 @@ class SbPalette extends ThemeExtension<SbPalette> {
     required this.goodFg,
     required this.hairline,
     required this.shadow,
+    required this.accentTint,
+    required this.meBg,
+    required this.meFg,
+    required this.faces,
+    required this.tintCool,
+    required this.tintWarm,
+    required this.tintGreen,
+    required this.tintRed,
+    required this.tintGold,
   });
 
   /// Page background.
@@ -75,6 +87,26 @@ class SbPalette extends ThemeExtension<SbPalette> {
   final Color hairline;
   final Color shadow;
 
+  /// Behind accent-coloured chips ("2 calls to wrap up").
+  final Color accentTint;
+
+  /// Your own face (the profile button).
+  final Color meBg;
+  final Color meFg;
+
+  /// People's faces; a person always gets the same one ([faceFor]).
+  final List<SbTint> faces;
+
+  /// Icon tiles: blue-grey, warm, green, red and gold.
+  final SbTint tintCool;
+  final SbTint tintWarm;
+  final SbTint tintGreen;
+  final SbTint tintRed;
+  final SbTint tintGold;
+
+  /// The face tint for [name]: the same person always gets the same one.
+  SbTint faceFor(String name) => faces[SbTint.hashOf(name) % faces.length];
+
   static const light = SbPalette(
     canvas: Color(0xFFF3ECE2),
     surface: Color(0xFFFFFCF7),
@@ -95,6 +127,15 @@ class SbPalette extends ThemeExtension<SbPalette> {
     goodFg: Color(0xFF3E5931),
     hairline: Color(0x00000000),
     shadow: Color(0x142B1D16),
+    accentTint: Color(0xFFF4E6D2),
+    meBg: Color(0xFFE8B86A),
+    meFg: Color(0xFF2A1C15),
+    faces: SbTint.espresso,
+    tintCool: SbTint.slate,
+    tintWarm: SbTint.mocha,
+    tintGreen: SbTint.sage,
+    tintRed: SbTint.cherry,
+    tintGold: SbTint.gold,
   );
 
   static const dark = SbPalette(
@@ -117,6 +158,83 @@ class SbPalette extends ThemeExtension<SbPalette> {
     goodFg: Color(0xFFA9C79A),
     hairline: Color(0x0DFFFFFF),
     shadow: Color(0x4D000000),
+    accentTint: Color(0xFF3A2B1B),
+    meBg: Color(0xFFE8B86A),
+    meFg: Color(0xFF2A1C15),
+    faces: SbTint.espresso,
+    tintCool: SbTint.slate,
+    tintWarm: SbTint.mocha,
+    tintGreen: SbTint.sage,
+    tintRed: SbTint.cherry,
+    tintGold: SbTint.gold,
+  );
+
+  /// Espresso by name.
+  static const espressoLight = light;
+  static const espressoDark = dark;
+
+  /// Ink, light: the default.
+  static const inkLight = SbPalette(
+    canvas: Color(0xFFF4F4F1),
+    surface: Color(0xFFFFFFFF),
+    fill: Color(0xFFEBEBE7),
+    track: Color(0xFFDADAD5),
+    text: Color(0xFF18181B),
+    text2: Color(0xFF5C5C63),
+    text3: Color(0xFF77777F),
+    primary: Color(0xFF18181B),
+    onPrimary: Color(0xFFFFFFFF),
+    accent: Color(0xFF3451C6),
+    honey: Color(0xFF93A8FF),
+    oweBg: Color(0xFFFBE7E2),
+    oweFg: Color(0xFF9E2F19),
+    late: Color(0xFFB4361E),
+    lateDot: Color(0xFFC9432A),
+    goodBg: Color(0xFFE3F0E6),
+    goodFg: Color(0xFF2F6B3F),
+    hairline: Color(0x00000000),
+    shadow: Color(0x1418181B),
+    accentTint: Color(0xFFE8ECFB),
+    meBg: Color(0xFFE8ECFB),
+    meFg: Color(0xFF3451C6),
+    faces: SbTint.ink,
+    tintCool: SbTint.inkSky,
+    tintWarm: SbTint.inkSand,
+    tintGreen: SbTint.inkSage,
+    tintRed: SbTint.inkRose,
+    tintGold: SbTint.inkGold,
+  );
+
+  /// Ink, dark.
+  static const inkDark = SbPalette(
+    canvas: Color(0xFF111113),
+    surface: Color(0xFF1C1C20),
+    fill: Color(0xFF2A2A30),
+    track: Color(0xFF3A3A42),
+    text: Color(0xFFF2F2F4),
+    text2: Color(0xFFA9A9B2),
+    text3: Color(0xFF7E7E88),
+    primary: Color(0xFFF2F2F4),
+    onPrimary: Color(0xFF18181B),
+    accent: Color(0xFF93A8FF),
+    honey: Color(0xFF3451C6),
+    oweBg: Color(0xFF3B201B),
+    oweFg: Color(0xFFFFB3A3),
+    late: Color(0xFFFF8B73),
+    lateDot: Color(0xFFF0705A),
+    goodBg: Color(0xFF1E3325),
+    goodFg: Color(0xFF9BD3A9),
+    hairline: Color(0x0DFFFFFF),
+    shadow: Color(0x4D000000),
+    accentTint: Color(0xFF232A45),
+    meBg: Color(0xFF232A45),
+    meFg: Color(0xFF93A8FF),
+    faces: SbTint.ink,
+    tintCool: SbTint.inkSky,
+    tintWarm: SbTint.inkSand,
+    tintGreen: SbTint.inkSage,
+    tintRed: SbTint.inkRose,
+    tintGold: SbTint.inkGold,
   );
 
   @override
@@ -140,6 +258,15 @@ class SbPalette extends ThemeExtension<SbPalette> {
     Color? goodFg,
     Color? hairline,
     Color? shadow,
+    Color? accentTint,
+    Color? meBg,
+    Color? meFg,
+    List<SbTint>? faces,
+    SbTint? tintCool,
+    SbTint? tintWarm,
+    SbTint? tintGreen,
+    SbTint? tintRed,
+    SbTint? tintGold,
   }) {
     return SbPalette(
       canvas: canvas ?? this.canvas,
@@ -161,6 +288,15 @@ class SbPalette extends ThemeExtension<SbPalette> {
       goodFg: goodFg ?? this.goodFg,
       hairline: hairline ?? this.hairline,
       shadow: shadow ?? this.shadow,
+      accentTint: accentTint ?? this.accentTint,
+      meBg: meBg ?? this.meBg,
+      meFg: meFg ?? this.meFg,
+      faces: faces ?? this.faces,
+      tintCool: tintCool ?? this.tintCool,
+      tintWarm: tintWarm ?? this.tintWarm,
+      tintGreen: tintGreen ?? this.tintGreen,
+      tintRed: tintRed ?? this.tintRed,
+      tintGold: tintGold ?? this.tintGold,
     );
   }
 
@@ -188,17 +324,26 @@ class SbPalette extends ThemeExtension<SbPalette> {
       goodFg: l(goodFg, other.goodFg),
       hairline: l(hairline, other.hairline),
       shadow: l(shadow, other.shadow),
+      accentTint: l(accentTint, other.accentTint),
+      meBg: l(meBg, other.meBg),
+      meFg: l(meFg, other.meFg),
+      faces: t < 0.5 ? faces : other.faces,
+      tintCool: SbTint.lerp(tintCool, other.tintCool, t),
+      tintWarm: SbTint.lerp(tintWarm, other.tintWarm, t),
+      tintGreen: SbTint.lerp(tintGreen, other.tintGreen, t),
+      tintRed: SbTint.lerp(tintRed, other.tintRed, t),
+      tintGold: SbTint.lerp(tintGold, other.tintGold, t),
     );
   }
 }
 
 extension SbThemeContext on BuildContext {
-  /// The Espresso colours for the current brightness.
-  SbPalette get sb => Theme.of(this).extension<SbPalette>() ?? SbPalette.light;
+  /// The app's colours for the current theme and brightness.
+  SbPalette get sb => Theme.of(this).extension<SbPalette>() ?? SbPalette.inkLight;
 }
 
-/// Soft tints for people's faces. The same in light and dark mode, and the
-/// same person always gets the same tint.
+/// Soft tints for faces and icon tiles. The same in light and dark mode; each
+/// palette has its own set ([SbPalette.faces]).
 @immutable
 class SbTint {
   const SbTint(this.bg, this.fg);
@@ -212,15 +357,36 @@ class SbTint {
   static const slate = SbTint(Color(0xFFE2E6EC), Color(0xFF3C4E66));
   static const neutral = SbTint(Color(0xFFEAE1D4), Color(0xFF4A3B30));
 
-  static const all = [mocha, cherry, sage, rose, slate, neutral];
+  static const gold = SbTint(Color(0xFFF4E3C4), Color(0xFF7A4B0F));
 
-  static SbTint forName(String name) {
+  static const espresso = [mocha, cherry, sage, rose, slate, neutral];
+
+  // Ink: cooler, greyer tints that sit on white and on near-black.
+  static const inkSky = SbTint(Color(0xFFE1E8F5), Color(0xFF2F4C82));
+  static const inkRose = SbTint(Color(0xFFF6E1DC), Color(0xFF8A3324));
+  static const inkSage = SbTint(Color(0xFFE2ECE3), Color(0xFF2F5B38));
+  static const inkSand = SbTint(Color(0xFFEFE6D6), Color(0xFF6B4F22));
+  static const inkLilac = SbTint(Color(0xFFECE4F3), Color(0xFF5B3B7A));
+  static const inkStone = SbTint(Color(0xFFE9E8E4), Color(0xFF4A4A50));
+  static const inkGold = SbTint(Color(0xFFF6EAD6), Color(0xFF7A4A00));
+
+  static const ink = [inkSky, inkRose, inkSage, inkSand, inkLilac, inkStone];
+
+  /// Espresso's set, for code that has no palette at hand.
+  static const all = espresso;
+
+  /// A stable hash of a name, so a person keeps their tint.
+  static int hashOf(String name) {
     var hash = 0;
     for (final unit in name.trim().toLowerCase().codeUnits) {
       hash = (hash * 31 + unit) & 0x7fffffff;
     }
-    return all[hash % all.length];
+    return hash;
   }
+
+  static SbTint forName(String name) => all[hashOf(name) % all.length];
+
+  static SbTint lerp(SbTint a, SbTint b, double t) => SbTint(Color.lerp(a.bg, b.bg, t)!, Color.lerp(a.fg, b.fg, t)!);
 }
 
 class AppFonts {
@@ -300,8 +466,17 @@ class AppTheme {
     );
   }
 
+  /// Espresso, as on the "Espresso · final" boards.
   static ThemeData get lightTheme => _build(SbPalette.light, Brightness.light);
   static ThemeData get darkTheme => _build(SbPalette.dark, Brightness.dark);
+
+  /// The chosen theme, light.
+  static ThemeData light(AppThemeName name) =>
+      _build(name == AppThemeName.espresso ? SbPalette.espressoLight : SbPalette.inkLight, Brightness.light);
+
+  /// The chosen theme, dark.
+  static ThemeData dark(AppThemeName name) =>
+      _build(name == AppThemeName.espresso ? SbPalette.espressoDark : SbPalette.inkDark, Brightness.dark);
 
   static TextStyle _display(SbPalette p, double size, double lineHeight, double letterSpacing) => TextStyle(
     fontFamily: AppFonts.display,
@@ -544,4 +719,14 @@ class AppTheme {
       ),
     );
   }
+}
+
+/// The two themes you can pick in Settings.
+enum AppThemeName {
+  ink,
+  espresso
+  ;
+
+  static AppThemeName fromName(String? name) =>
+      AppThemeName.values.firstWhere((t) => t.name == name, orElse: () => AppThemeName.ink);
 }

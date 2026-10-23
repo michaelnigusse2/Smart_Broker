@@ -13,6 +13,18 @@ class CallRepository {
     return maps.map(CallEntry.fromMap).toList();
   }
 
+  /// Every call since [since], newest first (for "Call back").
+  Future<List<CallEntry>> getSince(DateTime since) async {
+    final db = await _db.database;
+    final maps = await db.query(
+      'calls',
+      where: 'timestamp >= ?',
+      whereArgs: [since.millisecondsSinceEpoch],
+      orderBy: 'timestamp DESC',
+    );
+    return maps.map(CallEntry.fromMap).toList();
+  }
+
   /// Whether this call (same contact and start time) is already logged.
   Future<bool> exists(String contactId, DateTime timestamp) async => (await _findId(contactId, timestamp)) != null;
 

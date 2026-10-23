@@ -46,7 +46,7 @@ class TodoTile extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: AppSpacing.xs),
       decoration: BoxDecoration(
-        color: isSelected ? AppColors.primary.withValues(alpha: 0.1) : Colors.transparent,
+        color: isSelected ? context.sb.primary.withValues(alpha: 0.1) : Colors.transparent,
         borderRadius: AppRadius.card,
       ),
       child: ListTile(
@@ -55,7 +55,7 @@ class TodoTile extends StatelessWidget {
         leading: Checkbox(
           value: isBulkMode ? isSelected : todo.isCompleted,
           onChanged: onChanged,
-          activeColor: AppColors.primary,
+          activeColor: context.sb.primary,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
         ),
         title: Row(
@@ -67,7 +67,7 @@ class TodoTile extends StatelessWidget {
                   todo.title,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     decoration: todo.isCompleted ? TextDecoration.lineThrough : null,
-                    color: todo.isCompleted ? AppColors.textTertiary : AppColors.textPrimary,
+                    color: todo.isCompleted ? context.sb.text3 : context.sb.text,
                   ),
                 ),
               ),
@@ -77,8 +77,8 @@ class TodoTile extends StatelessWidget {
                 margin: const EdgeInsets.only(left: AppSpacing.sm),
                 width: 8,
                 height: 8,
-                decoration: const BoxDecoration(
-                  color: Colors.orange,
+                decoration: BoxDecoration(
+                  color: context.sb.late,
                   shape: BoxShape.circle,
                 ),
               ),
@@ -92,7 +92,7 @@ class TodoTile extends StatelessWidget {
                   child: Text(
                     subtitleText!,
                     style: theme.textTheme.bodySmall?.copyWith(
-                      color: AppColors.textSecondary,
+                      color: context.sb.text2,
                     ),
                   ),
                 ),
@@ -103,10 +103,10 @@ class TodoTile extends StatelessWidget {
             : Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (showChevron) const Icon(LucideIcons.chevronRight, size: 16, color: AppColors.textTertiary),
+                  if (showChevron) Icon(LucideIcons.chevronRight, size: 16, color: context.sb.text3),
                   if (onDelete != null || onEdit != null)
                     PopupMenuButton<String>(
-                      icon: const Icon(LucideIcons.moreVertical, size: 16, color: AppColors.textTertiary),
+                      icon: Icon(LucideIcons.moreVertical, size: 16, color: context.sb.text3),
                       onSelected: (value) {
                         if (value == 'edit') _showEditDialog(context);
                         if (value == 'delete') _confirmDelete(context);
@@ -124,13 +124,13 @@ class TodoTile extends StatelessWidget {
                             ),
                           ),
                         if (onDelete != null)
-                          const PopupMenuItem(
+                          PopupMenuItem(
                             value: 'delete',
                             child: Row(
                               children: [
-                                Icon(LucideIcons.trash2, size: 16, color: AppColors.error),
+                                Icon(LucideIcons.trash2, size: 16, color: context.sb.late),
                                 SizedBox(width: AppSpacing.sm),
-                                Text('Delete', style: TextStyle(color: AppColors.error)),
+                                Text('Delete', style: TextStyle(color: context.sb.late)),
                               ],
                             ),
                           ),
@@ -178,7 +178,7 @@ class TodoTile extends StatelessWidget {
               Navigator.pop(context);
               onDelete?.call();
             },
-            child: const Text('Delete', style: TextStyle(color: AppColors.error)),
+            child: Text('Delete', style: TextStyle(color: context.sb.late)),
           ),
         ],
       ),

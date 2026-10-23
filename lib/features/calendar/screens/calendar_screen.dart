@@ -211,6 +211,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
         ..showSnackBar(
           SnackBar(
             content: const Text('Reminder deleted'),
+            // Undo stays a few seconds, not until dismissed.
+            persist: false,
             action: SnackBarAction(
               label: 'Undo',
               onPressed: () async {

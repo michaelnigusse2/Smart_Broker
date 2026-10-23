@@ -28,7 +28,7 @@ class SbFace extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tint = SbTint.forName(name);
+    final tint = context.sb.faceFor(name);
     final ringColor = ring;
     final face = Container(
       width: size,
@@ -299,12 +299,22 @@ class _SbPressableState extends State<SbPressable> {
 
 /// The big full-width button at the bottom of a step or sheet.
 class SbPrimaryButton extends StatelessWidget {
-  const SbPrimaryButton({super.key, required this.label, required this.onPressed, this.icon, this.trailingIcon});
+  const SbPrimaryButton({
+    super.key,
+    required this.label,
+    required this.onPressed,
+    this.icon,
+    this.trailingIcon,
+    this.height = 60,
+  });
 
   final String label;
   final VoidCallback? onPressed;
   final IconData? icon;
   final IconData? trailingIcon;
+
+  /// 60 at the end of a step; 54 in sheets and bottom bars.
+  final double height;
 
   @override
   Widget build(BuildContext context) {
@@ -318,7 +328,7 @@ class SbPrimaryButton extends StatelessWidget {
                 onPressed!();
               },
         style: FilledButton.styleFrom(
-          minimumSize: const Size.fromHeight(60),
+          minimumSize: Size.fromHeight(height),
           // Button text replaces the ambient style, so name the font here.
           textStyle: const TextStyle(
             fontFamily: AppFonts.body,
@@ -389,4 +399,185 @@ class _SbRiseState extends State<SbRise> with SingleTickerProviderStateMixin {
       ),
     );
   }
+}
+
+/// Two or three choices in a grey pill, the chosen one raised (Settings:
+/// "System | Light | Dark"; a new number: "New person | I know them | …").
+class SbSegmented<T> extends StatelessWidget {
+  const SbSegmented({
+    super.key,
+    required this.options,
+    required this.selected,
+    required this.onChanged,
+    required this.label,
+  });
+
+  /// Each value with its label.
+  final List<(T, String)> options;
+  final T selected;
+  final ValueChanged<T> onChanged;
+
+  /// What the group chooses, for screen readers.
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final sb = context.sb;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return Semantics(
+      container: true,
+      label: label,
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(color: sb.fill, borderRadius: BorderRadius.circular(99)),
+        child: Row(
+          children: [
+            for (final (i, (value, text)) in options.indexed) ...[
+              if (i > 0) const SizedBox(width: 4),
+              Expanded(
+                // Longer labels get more room, so "People I know" stays on one line.
+                flex: text.characters.length.clamp(4, 16) + 6,
+                child: Semantics(
+                  button: true,
+                  selected: value == selected,
+                  label: text,
+                  excludeSemantics: true,
+                  child: SbPressable(
+                    onTap: () => onChanged(value),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      curve: Curves.easeOut,
+                      constraints: const BoxConstraints(minHeight: 38),
+                      alignment: Alignment.center,
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: value == selected ? (dark ? sb.track : sb.surface) : sb.fill.withValues(alpha: 0),
+                        borderRadius: BorderRadius.circular(99),
+                        boxShadow: value == selected && !dark
+                            ? [BoxShadow(color: sb.shadow, blurRadius: 2, offset: const Offset(0, 1))]
+                            : null,
+                      ),
+                      child: Text(
+                        text,
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        style: TextStyle(
+                          fontSize: 14,
+                          height: 18 / 14,
+                          fontWeight: FontWeight.w600,
+                          color: value == selected ? sb.text : sb.text2,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A rounded icon tile at the start of a settings or list row.
+class SbIconTile extends StatelessWidget {
+  const SbIconTile({super.key, required this.icon, required this.tint, this.size = 38});
+
+  final IconData icon;
+  final SbTint tint;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(color: tint.bg, borderRadius: BorderRadius.circular(size * 0.32)),
+      child: Icon(icon, size: size * 0.53, color: tint.fg),
+    );
+  }
+}
+
+/// A row in a settings-style card: icon tile, title and a line, and an
+/// optional trailing widget. Rows after the first get a hairline on top.
+class SbListRow extends StatelessWidget {
+  const SbListRow({
+    super.key,
+    required this.title,
+    this.subtitle,
+    this.leading,
+    this.trailing,
+    this.onTap,
+    this.onLongPress,
+    this.first = false,
+    this.titleColor,
+    this.semanticsLabel,
+  });
+
+  final String title;
+  final String? subtitle;
+  final Widget? leading;
+  final Widget? trailing;
+  final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
+  final bool first;
+  final Color? titleColor;
+  final String? semanticsLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final sb = context.sb;
+    final row = Container(
+      constraints: const BoxConstraints(minHeight: 64),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        border: first ? null : Border(top: BorderSide(color: sb.fill)),
+      ),
+      child: Row(
+        children: [
+          if (leading != null) ...[leading!, const SizedBox(width: 14)],
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 16,
+                    height: 22 / 16,
+                    fontWeight: FontWeight.w600,
+                    color: titleColor ?? sb.text,
+                  ),
+                ),
+                if (subtitle != null && subtitle!.isNotEmpty)
+                  Text(
+                    subtitle!,
+                    style: TextStyle(fontSize: 13, height: 18 / 13, color: sb.text2),
+                  ),
+              ],
+            ),
+          ),
+          if (trailing != null) ...[const SizedBox(width: 10), trailing!],
+        ],
+      ),
+    );
+    if (onTap == null && onLongPress == null) {
+      return semanticsLabel == null ? row : Semantics(label: semanticsLabel, child: row);
+    }
+    return Semantics(
+      button: true,
+      label: semanticsLabel,
+      child: InkWell(onTap: onTap, onLongPress: onLongPress, child: row),
+    );
+  }
+}
+
+/// The small grey chevron at the end of a row that opens something.
+class SbChevron extends StatelessWidget {
+  const SbChevron({super.key});
+
+  @override
+  Widget build(BuildContext context) => Icon(Icons.chevron_right_rounded, size: 22, color: context.sb.text3);
 }

@@ -139,8 +139,8 @@ class _TextPromptSheetState extends State<_TextPromptSheet> {
             ElevatedButton(
               onPressed: _submit,
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
+                backgroundColor: context.sb.primary,
+                foregroundColor: context.sb.onPrimary,
                 padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
               ),
               child: Text(widget.confirmLabel),

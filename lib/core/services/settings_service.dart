@@ -37,6 +37,7 @@ class SettingsService {
   static const String _keyAiProvider = 'ai_provider';
   static const String _keyAiConsentProvider = 'ai_consent_provider';
   static const String _keyAiModelPrefix = 'ai_model_';
+  static const String _keyMissedCallReminders = 'missed_call_reminders';
 
   // Default values
   static const bool _defaultPromptAfterCall = true;
@@ -50,6 +51,18 @@ class SettingsService {
   Future<void> setPromptAfterCall(bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyPromptAfterCall, value);
+  }
+
+  /// A quiet notification after a missed call from someone you know, with
+  /// Call back and Remind me. On unless turned off in Settings.
+  Future<bool> getMissedCallReminders() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_keyMissedCallReminders) ?? true;
+  }
+
+  Future<void> setMissedCallReminders(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyMissedCallReminders, value);
   }
 
   Future<int> getMinCallDuration() async {

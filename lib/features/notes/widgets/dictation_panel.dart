@@ -20,7 +20,7 @@ class DictationPanel extends StatelessWidget {
     final finishing = state == DictationState.finishing;
 
     return Material(
-      color: AppColors.surfaceElevated,
+      color: context.sb.fill,
       elevation: 6,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg))),
       child: SafeArea(
@@ -62,7 +62,7 @@ class DictationPanel extends StatelessWidget {
                         ? 'Start speaking…'
                         : controller.liveText,
                     style: controller.liveText.isEmpty || preparing
-                        ? theme.textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary)
+                        ? theme.textTheme.bodyMedium?.copyWith(color: context.sb.text2)
                         : theme.textTheme.bodyLarge?.copyWith(height: 1.5),
                   ),
                 ),
@@ -117,7 +117,7 @@ class _RecordingDotState extends State<_RecordingDot> with SingleTickerProviderS
       child: Container(
         width: 12,
         height: 12,
-        decoration: const BoxDecoration(color: AppColors.error, shape: BoxShape.circle),
+        decoration: BoxDecoration(color: context.sb.late, shape: BoxShape.circle),
       ),
     );
   }

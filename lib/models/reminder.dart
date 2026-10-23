@@ -8,6 +8,14 @@ class Reminder {
   final bool completed; // NEW
   final DateTime createdAt; // NEW
 
+  /// What it's for: '' (a reminder you made) or [callBack] (call someone
+  /// back after a missed call; it closes once you've talked).
+  final String kind;
+
+  static const callBack = 'callBack';
+
+  bool get isCallBack => kind == callBack;
+
   const Reminder({
     required this.id,
     required this.contactId,
@@ -17,6 +25,7 @@ class Reminder {
     required this.dateTime,
     this.completed = false, // NEW
     required this.createdAt, // NEW
+    this.kind = '',
   });
 
   Map<String, dynamic> toMap() {
@@ -29,6 +38,7 @@ class Reminder {
       'dateTime': dateTime.millisecondsSinceEpoch,
       'completed': completed ? 1 : 0,
       'createdAt': createdAt.millisecondsSinceEpoch,
+      'kind': kind,
     };
   }
 
@@ -42,6 +52,7 @@ class Reminder {
       dateTime: DateTime.fromMillisecondsSinceEpoch(map['dateTime']),
       completed: map['completed'] == 1,
       createdAt: DateTime.fromMillisecondsSinceEpoch(map['createdAt']),
+      kind: map['kind'] as String? ?? '',
     );
   }
 
@@ -54,6 +65,7 @@ class Reminder {
     DateTime? dateTime,
     bool? completed,
     DateTime? createdAt,
+    String? kind,
   }) {
     return Reminder(
       id: id ?? this.id,
@@ -64,6 +76,7 @@ class Reminder {
       dateTime: dateTime ?? this.dateTime,
       completed: completed ?? this.completed,
       createdAt: createdAt ?? this.createdAt,
+      kind: kind ?? this.kind,
     );
   }
 }

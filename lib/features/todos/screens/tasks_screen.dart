@@ -78,7 +78,8 @@ class _TasksScreenState extends State<TasksScreen> {
   void _snack(String message, {SnackBarAction? action}) {
     final messenger = ScaffoldMessenger.of(context);
     messenger.clearSnackBars();
-    messenger.showSnackBar(SnackBar(content: Text(message), action: action));
+    // An Undo stays a few seconds, not until dismissed.
+    messenger.showSnackBar(SnackBar(content: Text(message), action: action, persist: false));
   }
 
   Future<void> _add() async {

@@ -156,7 +156,7 @@ class _NoteDetailScreenState extends State<NoteDetailScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete', style: TextStyle(color: AppColors.error)),
+            child: Text('Delete', style: TextStyle(color: context.sb.late)),
           ),
         ],
       ),
@@ -217,7 +217,7 @@ class _NoteDetailScreenState extends State<NoteDetailScreen> {
               },
             ),
             IconButton(
-              icon: const Icon(LucideIcons.trash2, color: AppColors.error),
+              icon: Icon(LucideIcons.trash2, color: context.sb.late),
               onPressed: _deleteNote,
             ),
           ],
@@ -243,17 +243,17 @@ class _NoteDetailScreenState extends State<NoteDetailScreen> {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
                   decoration: BoxDecoration(
-                    color: AppColors.surfaceElevated,
+                    color: context.sb.fill,
                     borderRadius: AppRadius.button,
-                    border: Border.all(color: AppColors.divider),
+                    border: Border.all(color: context.sb.fill),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       CircleAvatar(
                         radius: 12,
-                        backgroundColor: AppColors.primary.withValues(alpha: 0.1),
-                        foregroundColor: AppColors.primary,
+                        backgroundColor: context.sb.primary.withValues(alpha: 0.1),
+                        foregroundColor: context.sb.primary,
                         child: Text(
                           _contact!.initials,
                           style: theme.textTheme.labelSmall?.copyWith(fontSize: 10, fontWeight: FontWeight.bold),
@@ -268,7 +268,7 @@ class _NoteDetailScreenState extends State<NoteDetailScreen> {
                         ),
                       ),
                       const SizedBox(width: AppSpacing.xs),
-                      const Icon(LucideIcons.chevronRight, size: 14, color: AppColors.textTertiary),
+                      Icon(LucideIcons.chevronRight, size: 14, color: context.sb.text3),
                     ],
                   ),
                 ),
@@ -278,14 +278,14 @@ class _NoteDetailScreenState extends State<NoteDetailScreen> {
               // Date
               Text(
                 DateFormat.yMMMMd().add_jm().format(_note!.createdAt),
-                style: theme.textTheme.labelMedium?.copyWith(color: AppColors.textSecondary),
+                style: theme.textTheme.labelMedium?.copyWith(color: context.sb.text2),
               ),
               const SizedBox(height: AppSpacing.xl),
 
               // AI Summary Section
               Row(
                 children: [
-                  const Icon(LucideIcons.sparkles, size: 16, color: AppColors.primary),
+                  Icon(LucideIcons.sparkles, size: 16, color: context.sb.primary),
                   const SizedBox(width: AppSpacing.sm),
                   Text('AI Summary', style: theme.textTheme.titleSmall),
                 ],
@@ -298,7 +298,7 @@ class _NoteDetailScreenState extends State<NoteDetailScreen> {
                   decoration: InputDecoration(
                     hintText: 'Edit summary...',
                     filled: true,
-                    fillColor: AppColors.surfaceElevated,
+                    fillColor: context.sb.fill,
                     border: OutlineInputBorder(
                       borderRadius: AppRadius.card,
                       borderSide: BorderSide.none,
@@ -310,9 +310,9 @@ class _NoteDetailScreenState extends State<NoteDetailScreen> {
                 Container(
                   padding: const EdgeInsets.all(AppSpacing.lg),
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.05),
+                    color: context.sb.primary.withValues(alpha: 0.05),
                     borderRadius: AppRadius.card,
-                    border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
+                    border: Border.all(color: context.sb.primary.withValues(alpha: 0.2)),
                   ),
                   child: _note!.aiSummary.isEmpty
                       ? Row(
@@ -320,7 +320,7 @@ class _NoteDetailScreenState extends State<NoteDetailScreen> {
                             Expanded(
                               child: Text(
                                 'Not processed by AI yet.',
-                                style: theme.textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary),
+                                style: theme.textTheme.bodyMedium?.copyWith(color: context.sb.text2),
                               ),
                             ),
                             TextButton(onPressed: _runAiReview, child: const Text('Run AI Review')),
@@ -336,7 +336,7 @@ class _NoteDetailScreenState extends State<NoteDetailScreen> {
               // Original Note Section
               Row(
                 children: [
-                  const Icon(LucideIcons.fileText, size: 16, color: AppColors.textSecondary),
+                  Icon(LucideIcons.fileText, size: 16, color: context.sb.text2),
                   const SizedBox(width: AppSpacing.sm),
                   Text('Original Note', style: theme.textTheme.titleSmall),
                 ],
@@ -349,7 +349,7 @@ class _NoteDetailScreenState extends State<NoteDetailScreen> {
                   decoration: InputDecoration(
                     hintText: 'Edit raw text...',
                     filled: true,
-                    fillColor: AppColors.surfaceElevated,
+                    fillColor: context.sb.fill,
                     border: OutlineInputBorder(
                       borderRadius: AppRadius.card,
                       borderSide: BorderSide.none,
@@ -361,15 +361,15 @@ class _NoteDetailScreenState extends State<NoteDetailScreen> {
                 Container(
                   padding: const EdgeInsets.all(AppSpacing.lg),
                   decoration: BoxDecoration(
-                    color: AppColors.surfaceElevated,
+                    color: context.sb.fill,
                     borderRadius: AppRadius.card,
-                    border: Border.all(color: AppColors.divider),
+                    border: Border.all(color: context.sb.fill),
                   ),
                   child: Text(
                     '"${_note!.rawText}"',
                     style: theme.textTheme.bodyMedium?.copyWith(
                       fontStyle: FontStyle.italic,
-                      color: AppColors.textSecondary,
+                      color: context.sb.text2,
                       height: 1.5,
                     ),
                   ),
@@ -379,7 +379,7 @@ class _NoteDetailScreenState extends State<NoteDetailScreen> {
                 const SizedBox(height: AppSpacing.xxl),
                 Row(
                   children: [
-                    const Icon(LucideIcons.checkSquare, size: 16, color: AppColors.textSecondary),
+                    Icon(LucideIcons.checkSquare, size: 16, color: context.sb.text2),
                     const SizedBox(width: AppSpacing.sm),
                     Text('Action Items', style: theme.textTheme.titleSmall),
                   ],
@@ -400,7 +400,7 @@ class _NoteDetailScreenState extends State<NoteDetailScreen> {
                 const SizedBox(height: AppSpacing.xxl),
                 Row(
                   children: [
-                    const Icon(LucideIcons.bell, size: 16, color: AppColors.textSecondary),
+                    Icon(LucideIcons.bell, size: 16, color: context.sb.text2),
                     const SizedBox(width: AppSpacing.sm),
                     Text('Reminders', style: theme.textTheme.titleSmall),
                   ],

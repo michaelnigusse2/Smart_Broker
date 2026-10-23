@@ -24,11 +24,11 @@ class ReminderCard extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: AppSpacing.sm),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: context.sb.surface,
         borderRadius: AppRadius.card,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
+            color: context.sb.shadow,
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -49,12 +49,12 @@ class ReminderCard extends StatelessWidget {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     border: Border.all(
-                      color: reminder.completed ? Colors.green : (isOverdue ? AppColors.error : AppColors.border),
+                      color: reminder.completed ? context.sb.goodFg : (isOverdue ? context.sb.late : context.sb.track),
                       width: 2,
                     ),
-                    color: reminder.completed ? Colors.green : Colors.transparent,
+                    color: reminder.completed ? context.sb.goodFg : Colors.transparent,
                   ),
-                  child: reminder.completed ? const Icon(LucideIcons.check, size: 14, color: Colors.white) : null,
+                  child: reminder.completed ? Icon(LucideIcons.check, size: 14, color: context.sb.surface) : null,
                 ),
               ),
               const SizedBox(width: AppSpacing.md),
@@ -65,9 +65,7 @@ class ReminderCard extends StatelessWidget {
                     Text(
                       reminder.title,
                       style: theme.textTheme.bodyMedium?.copyWith(
-                        color: reminder.completed
-                            ? AppColors.textTertiary
-                            : (isOverdue ? AppColors.error : AppColors.textPrimary),
+                        color: reminder.completed ? context.sb.text3 : (isOverdue ? context.sb.late : context.sb.text),
                         fontWeight: FontWeight.w500,
                         decoration: reminder.completed ? TextDecoration.lineThrough : null,
                       ),
@@ -78,9 +76,7 @@ class ReminderCard extends StatelessWidget {
                     Text(
                       DateFormat.MMMd().add_jm().format(reminder.dateTime),
                       style: theme.textTheme.labelSmall?.copyWith(
-                        color: reminder.completed
-                            ? AppColors.textTertiary
-                            : (isOverdue ? AppColors.error : AppColors.textSecondary),
+                        color: reminder.completed ? context.sb.text3 : (isOverdue ? context.sb.late : context.sb.text2),
                       ),
                     ),
                   ],
@@ -88,7 +84,7 @@ class ReminderCard extends StatelessWidget {
               ),
               if (onTap != null) ...[
                 const SizedBox(width: AppSpacing.sm),
-                const Icon(LucideIcons.chevronRight, size: 16, color: AppColors.textTertiary),
+                Icon(LucideIcons.chevronRight, size: 16, color: context.sb.text3),
               ],
             ],
           ),

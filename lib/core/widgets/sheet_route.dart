@@ -12,7 +12,7 @@ class SheetRoute<T> extends PageRoute<T> {
   bool get opaque => false;
 
   @override
-  Color? get barrierColor => const Color(0x7317110D);
+  Color? get barrierColor => const Color(0x73111113);
 
   @override
   String? get barrierLabel => null;

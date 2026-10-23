@@ -245,7 +245,7 @@ class CallDetectionService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("SmartBroker")
             .setContentText("Call detection active")
-            .setSmallIcon(android.R.drawable.ic_menu_call)
+            .setSmallIcon(R.drawable.ic_stat_sb)
             .setOngoing(true)
             .setSilent(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)

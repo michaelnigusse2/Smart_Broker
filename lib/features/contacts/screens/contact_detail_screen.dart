@@ -17,6 +17,7 @@ import '../../../core/services/overlay_draft_service.dart';
 import '../../../core/services/phone_dialer.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/sb_widgets.dart';
+import '../../../core/utils/call_backs.dart';
 import '../../../core/utils/day_labels.dart';
 import '../../../core/widgets/constrained_layout.dart';
 import '../../../models/call_entry.dart';
@@ -24,11 +25,13 @@ import '../../../models/contact.dart';
 import '../../../models/note.dart';
 import '../../../models/reminder.dart';
 import '../../../models/todo_item.dart';
+import '../../calls/widgets/call_back_sheets.dart';
 import '../../home/screens/main_shell.dart';
 import '../../todos/widgets/promise_sheet.dart';
+import 'contact_form_screen.dart';
 
-/// A person, built to the "Espresso · final" Person board: who they are,
-/// Call / Text / Note, the promises between you, and your last talks.
+/// A person, built to the Person boards: who they are, missed calls to
+/// return, Call / Text / Note, the promises between you, and your last talks.
 /// Editing, call history and deleting live behind "More".
 class ContactDetailScreen extends StatefulWidget {
   const ContactDetailScreen({super.key, this.clock});
@@ -133,12 +136,34 @@ class _ContactDetailScreenState extends State<ContactDetailScreen> {
   void _snack(String message, {SnackBarAction? action}) {
     final messenger = ScaffoldMessenger.of(context);
     messenger.clearSnackBars();
-    messenger.showSnackBar(SnackBar(content: Text(message), action: action));
+    // An Undo stays a few seconds, not until dismissed.
+    messenger.showSnackBar(SnackBar(content: Text(message), action: action, persist: false));
   }
 
   Future<void> _call() async {
     final opened = await PhoneDialer.dial(_contact!.phoneNumber);
     if (!opened && mounted) _snack("Couldn't open the phone's dialer");
+  }
+
+  /// Their open missed calls, if you haven't talked since.
+  CallBack? get _callBack {
+    final contact = _contact;
+    if (contact == null) return null;
+    final open = callBacks(calls: _calls, contacts: {contact.id: contact}, reminders: _reminders, now: _now);
+    return open.isEmpty ? null : open.first;
+  }
+
+  Future<void> _remindCallBack() async {
+    await showRemindCallBackSheet(context, _contact!);
+    if (mounted) _load();
+  }
+
+  Future<void> _callBackNotNeeded() async {
+    final contact = _contact!;
+    await callBackNotNeeded(contact);
+    if (!mounted) return;
+    _load();
+    _snack('No call back needed for ${contact.name.trim().split(RegExp(r'\s+')).first}');
   }
 
   Future<void> _text() async {
@@ -246,8 +271,13 @@ class _ContactDetailScreenState extends State<ContactDetailScreen> {
       case 'promise':
         await _addPromise();
       case 'edit':
-        await Navigator.pushNamed(context, AppRoutes.contactForm, arguments: contact);
-        if (mounted) _load();
+        final result = await Navigator.pushNamed(context, AppRoutes.contactForm, arguments: contact);
+        if (!mounted) return;
+        if (result == ContactFormScreen.deleteRequest) {
+          await _delete();
+        } else {
+          _load();
+        }
       case 'calls':
         await _showCallHistory();
       case 'delete':
@@ -342,6 +372,8 @@ class _ContactDetailScreenState extends State<ContactDetailScreen> {
           orElse: () => '',
         );
     final canCall = contact.phoneNumber.trim().isNotEmpty;
+    final callBack = _callBack;
+    final firstName = contact.name.trim().split(RegExp(r'\s+')).first;
 
     return Scaffold(
       body: SafeArea(
@@ -368,10 +400,25 @@ class _ContactDetailScreenState extends State<ContactDetailScreen> {
                 SbRise(
                   child: _Header(name: contact.name, detail: detail),
                 ),
-                const SizedBox(height: 18),
+                if (callBack != null) ...[
+                  const SizedBox(height: 18),
+                  SbRise(
+                    delay: const Duration(milliseconds: 80),
+                    child: _MissedBanner(
+                      callBack: callBack,
+                      firstName: firstName,
+                      now: now,
+                      onRemind: _remindCallBack,
+                      onNotNeeded: _callBackNotNeeded,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ] else
+                  const SizedBox(height: 18),
                 SbRise(
                   delay: const Duration(milliseconds: 80),
                   child: _Actions(
+                    callBack: callBack != null,
                     onCall: canCall ? _call : null,
                     onText: canCall ? _text : null,
                     onNote: _note,
@@ -387,7 +434,7 @@ class _ContactDetailScreenState extends State<ContactDetailScreen> {
                     delay: const Duration(milliseconds: 160),
                     child: _Promises(
                       promises: _promises,
-                      firstName: contact.name.trim().split(RegExp(r'\s+')).first,
+                      firstName: firstName,
                       now: now,
                       onTap: _promiseActions,
                     ),
@@ -405,7 +452,14 @@ class _ContactDetailScreenState extends State<ContactDetailScreen> {
                 ),
                 SbRise(
                   delay: const Duration(milliseconds: 240),
-                  child: _Talks(notes: talks, now: now, onTap: _openNote, onLongPress: _talkActions),
+                  child: _Talks(
+                    notes: talks,
+                    now: now,
+                    missed: callBack,
+                    onTap: _openNote,
+                    onLongPress: _talkActions,
+                    onMissed: _showCallHistory,
+                  ),
                 ),
               ],
             ),
@@ -471,10 +525,167 @@ class _Header extends StatelessWidget {
   }
 }
 
+/// "Selam called twice · Missed 09:58 and 10:42", with Remind me and Not
+/// needed. Shown while their missed calls are open.
+class _MissedBanner extends StatelessWidget {
+  const _MissedBanner({
+    required this.callBack,
+    required this.firstName,
+    required this.now,
+    required this.onRemind,
+    required this.onNotNeeded,
+  });
+
+  final CallBack callBack;
+  final String firstName;
+  final DateTime now;
+  final VoidCallback onRemind;
+  final VoidCallback onNotNeeded;
+
+  static String _clock(DateTime t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+  /// "Missed 10:42", "Missed 09:58 and 10:42", "Missed 3 calls, last yesterday 18:10".
+  static String detail(CallBack cb, DateTime now) {
+    String at(DateTime t) {
+      final days = DayLabels.daysBetween(t, now);
+      if (days == 0) return _clock(t);
+      if (days == 1) return 'yesterday ${_clock(t)}';
+      return '${DateFormat('EEE').format(t)} ${_clock(t)}';
+    }
+
+    final missed = switch (cb.missed) {
+      1 => 'Missed ${at(cb.lastMissedAt)}',
+      2 => 'Missed ${at(cb.firstMissedAt)} and ${at(cb.lastMissedAt)}',
+      _ => 'Missed ${cb.missed} calls, last ${at(cb.lastMissedAt)}',
+    };
+    return cb.triedAt == null ? missed : '$missed · you tried at ${_clock(cb.triedAt!)}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final sb = context.sb;
+    final cb = callBack;
+    final title = switch (cb.missed) {
+      1 => '$firstName called',
+      2 => '$firstName called twice',
+      _ => '$firstName called ${cb.missed} times',
+    };
+    final reminder = cb.reminder;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        boxShadow: [BoxShadow(color: sb.shadow, blurRadius: 2, offset: const Offset(0, 1))],
+      ),
+      child: Material(
+        color: sb.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          side: BorderSide(color: Color.alphaBlend(sb.late.withValues(alpha: 0.2), sb.surface)),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              MergeSemantics(
+                child: Row(
+                  children: [
+                    SbIconTile(icon: LucideIcons.phoneMissed, tint: SbTint(sb.oweBg, sb.late)),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            style: const TextStyle(fontSize: 16, height: 22 / 16, fontWeight: FontWeight.w700),
+                          ),
+                          Text(
+                            detail(cb, now),
+                            style: TextStyle(
+                              fontSize: 13,
+                              height: 18 / 13,
+                              color: sb.text2,
+                              fontFeatures: const [FontFeature.tabularFigures()],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _BannerButton(
+                    icon: LucideIcons.bell,
+                    label: reminder == null ? 'Remind me' : 'Reminder ${reminderWhen(reminder.dateTime, now)}',
+                    color: reminder == null ? sb.text : sb.accent,
+                    background: reminder == null ? sb.canvas : sb.accentTint,
+                    onTap: onRemind,
+                  ),
+                  _BannerButton(label: 'Not needed', color: sb.text2, onTap: onNotNeeded),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BannerButton extends StatelessWidget {
+  const _BannerButton({required this.label, required this.color, required this.onTap, this.icon, this.background});
+
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+  final IconData? icon;
+  final Color? background;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: label,
+      excludeSemantics: true,
+      child: SbPressable(
+        onTap: onTap,
+        child: Container(
+          height: 40,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(99)),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (icon != null) ...[Icon(icon, size: 16, color: color), const SizedBox(width: 6)],
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 14, height: 20 / 14, fontWeight: FontWeight.w600, color: color),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Call (espresso, a little wider), Text and Note: 50 dp pills.
 class _Actions extends StatelessWidget {
-  const _Actions({required this.onCall, required this.onText, required this.onNote});
+  const _Actions({required this.onCall, required this.onText, required this.onNote, this.callBack = false});
 
+  /// They're waiting for a call back: the pill says so.
+  final bool callBack;
   final VoidCallback? onCall;
   final VoidCallback? onText;
   final VoidCallback onNote;
@@ -485,7 +696,12 @@ class _Actions extends StatelessWidget {
       children: [
         Expanded(
           flex: 13,
-          child: _ActionPill(icon: LucideIcons.phone, label: 'Call', onTap: onCall, filled: true),
+          child: _ActionPill(
+            icon: LucideIcons.phone,
+            label: callBack ? 'Call back' : 'Call',
+            onTap: onCall,
+            filled: true,
+          ),
         ),
         const SizedBox(width: 8),
         Expanded(
@@ -710,12 +926,23 @@ class _PromiseRow extends StatelessWidget {
 
 /// "Yesterday — Wants 3-year term": the date in a 78 dp column, one line each.
 class _Talks extends StatelessWidget {
-  const _Talks({required this.notes, required this.now, required this.onTap, required this.onLongPress});
+  const _Talks({
+    required this.notes,
+    required this.now,
+    required this.onTap,
+    required this.onLongPress,
+    this.missed,
+    this.onMissed,
+  });
 
   final List<Note> notes;
   final DateTime now;
   final ValueChanged<Note> onTap;
   final ValueChanged<Note> onLongPress;
+
+  /// Missed calls since you last talked: a red row on top.
+  final CallBack? missed;
+  final VoidCallback? onMissed;
 
   static String _when(DateTime t, DateTime now) {
     final days = DayLabels.daysBetween(t, now);
@@ -727,7 +954,8 @@ class _Talks extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final sb = context.sb;
-    if (notes.isEmpty) {
+    final missed = this.missed;
+    if (notes.isEmpty && missed == null) {
       return SbCard(
         child: Container(
           constraints: const BoxConstraints(minHeight: 52),
@@ -740,17 +968,52 @@ class _Talks extends StatelessWidget {
         ),
       );
     }
+    final offset = missed == null ? 0 : 1;
     return SbCard(
       child: Column(
         children: [
+          if (missed != null)
+            InkWell(
+              onTap: onMissed,
+              child: Container(
+                constraints: const BoxConstraints(minHeight: 52),
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 78,
+                      child: Text(
+                        _when(missed.lastMissedAt, now),
+                        maxLines: 1,
+                        style: TextStyle(
+                          fontSize: 13,
+                          height: 18 / 13,
+                          fontWeight: FontWeight.w700,
+                          color: sb.late,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Text(
+                        missed.missed == 1 ? 'Missed call' : 'Missed · ${missed.missed} calls',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 15, height: 21 / 15, fontWeight: FontWeight.w500, color: sb.text2),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           for (var i = 0; i < notes.length; i++)
             InkWell(
               onTap: () => onTap(notes[i]),
               onLongPress: () => onLongPress(notes[i]),
               child: Container(
-                constraints: BoxConstraints(minHeight: i == 0 ? 52 : 53),
+                constraints: BoxConstraints(minHeight: i + offset == 0 ? 52 : 53),
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                decoration: i == 0
+                decoration: i + offset == 0
                     ? null
                     : BoxDecoration(
                         border: Border(top: BorderSide(color: sb.fill)),

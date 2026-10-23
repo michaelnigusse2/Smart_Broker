@@ -1,5 +1,6 @@
 package com.smartbroker.smart_broker
 
+import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
@@ -22,11 +23,13 @@ class MainActivity : FlutterActivity() {
             window.isNavigationBarContrastEnforced = false
             window.isStatusBarContrastEnforced = false
         }
-        // Dark icons on the cream launch screen until Flutter draws its first
-        // frame and sets them itself.
+        // Icons that read on the launch screen (dark on the light canvas,
+        // light on the dark one) until Flutter draws and sets them itself.
+        val night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+            Configuration.UI_MODE_NIGHT_YES
         WindowCompat.getInsetsController(window, window.decorView).apply {
-            isAppearanceLightStatusBars = true
-            isAppearanceLightNavigationBars = true
+            isAppearanceLightStatusBars = !night
+            isAppearanceLightNavigationBars = !night
         }
     }
 

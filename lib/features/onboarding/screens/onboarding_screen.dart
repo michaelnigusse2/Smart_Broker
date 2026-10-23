@@ -451,7 +451,7 @@ class _TibebStripe extends StatelessWidget {
     return ExcludeSemantics(
       child: CustomPaint(
         size: Size(width, 10),
-        painter: _TibebPainter(diamond: sb.honey, centre: SbPalette.light.primary, bar: sb.accent),
+        painter: _TibebPainter(diamond: sb.honey, centre: sb.primary, bar: sb.accent),
       ),
     );
   }
@@ -575,12 +575,13 @@ class _WorkStep extends StatelessWidget {
     WorkType.other: LucideIcons.moreHorizontal,
   };
 
-  // As on the board: "I sell" slate, "Real estate" cherry, "Something else" mocha.
-  static const _tints = {
-    WorkType.company: SbTint.sage,
-    WorkType.sales: SbTint.slate,
-    WorkType.realEstate: SbTint.cherry,
-    WorkType.other: SbTint.mocha,
+  // As on the board: "I run a company" green, "I sell" cool, "Real estate"
+  // red, "Something else" warm, in the current palette's tints.
+  static Map<WorkType, SbTint> _tints(SbPalette sb) => {
+    WorkType.company: sb.tintGreen,
+    WorkType.sales: sb.tintCool,
+    WorkType.realEstate: sb.tintRed,
+    WorkType.other: sb.tintWarm,
   };
 
   @override
@@ -591,7 +592,7 @@ class _WorkStep extends StatelessWidget {
       child: _WorkTile(
         label: type.label,
         icon: _icons[type]!,
-        tint: _tints[type]!,
+        tint: _tints(sb)[type]!,
         selected: selected == type,
         onTap: () => onSelect(type),
       ),
@@ -691,7 +692,7 @@ class _WorkTile extends StatelessWidget {
                       width: 24,
                       height: 24,
                       decoration: BoxDecoration(color: sb.honey, shape: BoxShape.circle),
-                      child: const Icon(LucideIcons.check, size: 14, color: Color(0xFF2A1C15)),
+                      child: Icon(LucideIcons.check, size: 14, color: sb.primary),
                     ),
                   ),
                 ],
@@ -837,7 +838,7 @@ class _SetupStepState extends State<_SetupStep> {
             children: [
               _SetupRow(
                 icon: LucideIcons.users,
-                tint: SbTint.slate,
+                tint: sb.tintCool,
                 title: 'Your contacts',
                 subtitle: "Know who's calling",
                 value: _contactsOn,
@@ -845,7 +846,7 @@ class _SetupStepState extends State<_SetupStep> {
               ),
               _SetupRow(
                 icon: LucideIcons.mic,
-                tint: SbTint.mocha,
+                tint: sb.tintWarm,
                 title: 'Microphone',
                 subtitle: 'For voice notes',
                 value: _micOn,
@@ -867,7 +868,7 @@ class _SetupStepState extends State<_SetupStep> {
                   };
                   return _SetupRow(
                     icon: LucideIcons.download,
-                    tint: const SbTint(Color(0xFFF7DDD3), Color(0xFF8E3321)),
+                    tint: SbTint(sb.oweBg, sb.oweFg),
                     title: 'Offline voice',
                     subtitle: subtitle,
                     value: busy || status == ScribeModelStatus.ready,

@@ -143,7 +143,7 @@ class _ReminderDetailScreenState extends State<ReminderDetailScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete', style: TextStyle(color: AppColors.error)),
+            child: Text('Delete', style: TextStyle(color: context.sb.late)),
           ),
         ],
       ),
@@ -199,12 +199,12 @@ class _ReminderDetailScreenState extends State<ReminderDetailScreen> {
 
   Widget _buildStatusPill() {
     if (_reminder!.completed) {
-      return _Pill(color: Colors.green, label: 'Completed');
+      return _Pill(color: context.sb.goodFg, label: 'Completed');
     }
     if (_reminder!.dateTime.isBefore(DateTime.now())) {
-      return _Pill(color: AppColors.error, label: 'Overdue');
+      return _Pill(color: context.sb.late, label: 'Overdue');
     }
-    return _Pill(color: AppColors.primary, label: 'Upcoming');
+    return _Pill(color: context.sb.primary, label: 'Upcoming');
   }
 
   @override
@@ -236,7 +236,7 @@ class _ReminderDetailScreenState extends State<ReminderDetailScreen> {
             ? [
                 TextButton(
                   onPressed: _saveChanges,
-                  child: const Text('Save', style: TextStyle(color: AppColors.primary)),
+                  child: Text('Save', style: TextStyle(color: context.sb.primary)),
                 ),
               ]
             : [
@@ -245,7 +245,7 @@ class _ReminderDetailScreenState extends State<ReminderDetailScreen> {
                   onPressed: _enterEditMode,
                 ),
                 IconButton(
-                  icon: const Icon(LucideIcons.trash2, size: 20, color: AppColors.error),
+                  icon: Icon(LucideIcons.trash2, size: 20, color: context.sb.late),
                   onPressed: _deleteReminder,
                 ),
               ],
@@ -284,7 +284,7 @@ class _ReminderDetailScreenState extends State<ReminderDetailScreen> {
                           _reminder!.title,
                           style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                             decoration: _reminder!.completed ? TextDecoration.lineThrough : null,
-                            color: _reminder!.completed ? AppColors.textSecondary : null,
+                            color: _reminder!.completed ? context.sb.text2 : null,
                           ),
                         ),
 
@@ -298,7 +298,7 @@ class _ReminderDetailScreenState extends State<ReminderDetailScreen> {
                           padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
                           child: Row(
                             children: [
-                              Icon(LucideIcons.calendar, size: 20, color: AppColors.primary),
+                              Icon(LucideIcons.calendar, size: 20, color: context.sb.primary),
                               const SizedBox(width: AppSpacing.md),
                               Expanded(
                                 child: Text(
@@ -306,7 +306,7 @@ class _ReminderDetailScreenState extends State<ReminderDetailScreen> {
                                     'EEEE, MMM d, yyyy',
                                   ).add_jm().format(_isEditing ? _editedDateTime! : _reminder!.dateTime),
                                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                    color: AppColors.primary,
+                                    color: context.sb.primary,
                                   ),
                                 ),
                               ),
@@ -381,8 +381,8 @@ class _ReminderDetailScreenState extends State<ReminderDetailScreen> {
                   child: ElevatedButton(
                     onPressed: _toggleComplete,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: _reminder!.completed ? AppColors.surfaceElevated : AppColors.primary,
-                      foregroundColor: _reminder!.completed ? AppColors.textPrimary : Colors.white,
+                      backgroundColor: _reminder!.completed ? context.sb.fill : context.sb.primary,
+                      foregroundColor: _reminder!.completed ? context.sb.text : context.sb.onPrimary,
                       minimumSize: const Size(double.infinity, 56),
                       elevation: 0,
                     ),
@@ -446,7 +446,7 @@ class _LinkRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm, horizontal: AppSpacing.xs),
         child: Row(
           children: [
-            Icon(icon, size: 20, color: AppColors.textSecondary),
+            Icon(icon, size: 20, color: context.sb.text2),
             const SizedBox(width: AppSpacing.md),
             Expanded(
               child: Text(
@@ -456,7 +456,7 @@ class _LinkRow extends StatelessWidget {
                 ),
               ),
             ),
-            const Icon(LucideIcons.chevronRight, size: 16, color: AppColors.textTertiary),
+            Icon(LucideIcons.chevronRight, size: 16, color: context.sb.text3),
           ],
         ),
       ),

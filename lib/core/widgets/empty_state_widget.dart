@@ -29,26 +29,26 @@ class EmptyStateWidget extends StatelessWidget {
           children: [
             Container(
               padding: const EdgeInsets.all(AppSpacing.lg),
-              decoration: const BoxDecoration(
-                color: AppColors.surfaceElevated,
+              decoration: BoxDecoration(
+                color: context.sb.fill,
                 shape: BoxShape.circle,
               ),
               child: Icon(
                 icon,
                 size: 32,
-                color: AppColors.textTertiary,
+                color: context.sb.text3,
               ),
             ),
             const SizedBox(height: AppSpacing.xl),
             Text(
               title,
-              style: theme.textTheme.titleMedium?.copyWith(color: AppColors.textPrimary),
+              style: theme.textTheme.titleMedium?.copyWith(color: context.sb.text),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: AppSpacing.xs),
             Text(
               message,
-              style: theme.textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary),
+              style: theme.textTheme.bodyMedium?.copyWith(color: context.sb.text2),
               textAlign: TextAlign.center,
             ),
             if (actionLabel != null && onActionPressed != null) ...[

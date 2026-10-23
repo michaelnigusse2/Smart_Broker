@@ -31,19 +31,43 @@ class ContactRepository {
   Future<List<Contact>> search(String query) async {
     final db = await _db.database;
     final maps = await db.rawQuery(
-      "$_select WHERE c.name LIKE ? ESCAPE '\\' OR c.phoneNumber LIKE ? ESCAPE '\\' ORDER BY c.lastInteraction DESC",
-      [likeContains(query), likeContains(query)],
+      "$_select WHERE c.name LIKE ? ESCAPE '\\' OR c.phoneNumber LIKE ? ESCAPE '\\' OR c.otherPhones LIKE ? ESCAPE '\\' "
+      'ORDER BY c.lastInteraction DESC',
+      [likeContains(query), likeContains(query), likeContains(query)],
     );
     return maps.map(Contact.fromMap).toList();
   }
 
-  /// The contact with the same number (last 9 digits, any formatting), if any.
+  /// The contact with the same number (last 9 digits, any formatting), if
+  /// any: their main number first, then their other numbers.
   Future<Contact?> findByPhone(String phoneNumber) async {
     final key = PhoneContact.matchKey(phoneNumber);
     if (key.isEmpty) return null;
     final db = await _db.database;
-    final maps = await db.rawQuery('$_select WHERE c.phoneKey = ? LIMIT 1', [key]);
+    final maps = await db.rawQuery(
+      '$_select WHERE c.phoneKey = ? OR c.otherPhoneKeys LIKE ? ORDER BY c.phoneKey = ? DESC LIMIT 1',
+      [key, '%,$key,%', key],
+    );
     return maps.isEmpty ? null : Contact.fromMap(maps.first);
+  }
+
+  /// Adds [phoneNumber] to [contactId]'s other numbers (a second phone).
+  Future<void> addOtherPhone(String contactId, String phoneNumber) async {
+    final contact = await getById(contactId);
+    if (contact == null) return;
+    if (contact.allPhones.any((p) => PhoneContact.numbersMatch(p, phoneNumber))) return;
+    await update(contact.copyWith(otherPhones: [...contact.otherPhones, phoneNumber.trim()]));
+  }
+
+  /// "Not needed": missed calls before [when] no longer ask for a call back.
+  Future<void> clearCallBack(String contactId, DateTime when) async {
+    final db = await _db.database;
+    await db.update(
+      'contacts',
+      {'callBackClearedAt': when.millisecondsSinceEpoch},
+      where: 'id = ?',
+      whereArgs: [contactId],
+    );
   }
 
   /// Saves a new contact and returns its id. If a contact with the same

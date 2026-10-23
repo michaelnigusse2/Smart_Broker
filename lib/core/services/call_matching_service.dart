@@ -10,12 +10,17 @@ import '../../models/phone_contact.dart';
 import '../../models/todo_item.dart';
 import '../repositories/call_repository.dart';
 import '../repositories/contact_repository.dart';
+import '../repositories/new_number_repository.dart';
 import '../repositories/note_repository.dart';
+import '../repositories/reminder_repository.dart';
 import '../repositories/todo_repository.dart';
+import '../utils/call_backs.dart';
+import '../utils/day_labels.dart';
 import 'app_log.dart';
 import 'call_detection_service.dart';
 import 'call_overlay_state.dart';
 import 'notification_service.dart';
+import 'phone_contact_service.dart';
 import 'overlay_gateway.dart';
 import 'settings_service.dart';
 import 'wrap_up_store.dart';
@@ -45,8 +50,9 @@ bool shouldShowOverlay({
   }
 }
 
-/// Whether to show the "add a note" notification after a call. Unknown
-/// callers only get one in [OverlayMode.all] (until the unassigned-calls inbox).
+/// Whether to show the "add a note" notification after a call with one of
+/// your people. (A new number gets "Who was this?" instead:
+/// [shouldAskWhoWasThis].)
 @visibleForTesting
 bool shouldPromptAfterCall({
   required bool promptEnabled,
@@ -59,6 +65,16 @@ bool shouldPromptAfterCall({
   if (!promptEnabled || type == CallType.missed || duration < minDuration) return false;
   return isKnownContact || mode == OverlayMode.all;
 }
+
+/// Whether to ask "Who was this?" after a call with a new number: you
+/// talked (not missed, not too short) and after-call notes are on.
+@visibleForTesting
+bool shouldAskWhoWasThis({
+  required bool promptEnabled,
+  required CallType type,
+  required Duration duration,
+  required Duration minDuration,
+}) => promptEnabled && type != CallType.missed && duration > Duration.zero && duration >= minDuration;
 
 /// The moments marked during a call, timed from when talking started.
 ///
@@ -258,6 +274,12 @@ class CallMatchingService {
     }
     // The person tapped "Hide" on the ringing card: stay away for this call.
     if (state['hidden'] == true) return;
+    // "Not a client": no card for this number.
+    if (state['contactId'] == null &&
+        number != null &&
+        await NewNumberRepository().isIgnored(PhoneContact.matchKey(number))) {
+      return;
+    }
     if (!await overlay.isPermissionGranted()) return;
     try {
       if (!await overlay.isActive()) {
@@ -381,26 +403,12 @@ class CallMatchingService {
         return null;
       }
 
-      Contact contact;
-      final match = await _findContact(event.phoneNumber);
-      final isKnownContact = match != null;
-      if (match != null) {
-        await _contactRepo.touch(match.id, event.timestamp);
-        contact = match;
-        AppLog.d(_tag, 'matched to contact ${match.id}');
-      } else {
-        // TODO: unknown numbers — decide between auto-creating and an "unassigned calls" inbox.
-        final id = await _contactRepo.insert(
-          Contact(
-            id: '',
-            name: normalizedNumber,
-            phoneNumber: event.phoneNumber,
-            lastInteraction: event.timestamp,
-          ),
-        );
-        contact = (await _contactRepo.getById(id))!;
-        AppLog.d(_tag, 'created contact $id for unknown caller');
-      }
+      final match = await _findContact(event.phoneNumber) ?? await _fromPhoneContacts(event);
+      if (match == null) return _logNewNumber(event);
+      const isKnownContact = true;
+      await _contactRepo.touch(match.id, event.timestamp);
+      final contact = match;
+      AppLog.d(_tag, 'matched to contact ${match.id}');
 
       // The call log can report the same call again (e.g. after a restart).
       if (await _callRepo.exists(contact.id, event.timestamp)) {
@@ -426,6 +434,15 @@ class CallMatchingService {
       );
       AppLog.d(_tag, 'logged ${event.type.name} call (${event.duration.inSeconds}s)');
       _onCallLoggedController.add(callEntry);
+
+      // You talked: their missed calls are answered.
+      if (event.type != CallType.missed && event.duration > Duration.zero) {
+        await _closeCallBacks(contact.id);
+      }
+      if (event.type == CallType.missed) {
+        await _notifyMissed(contact, callEntry);
+        return contact;
+      }
 
       final prompt = shouldPromptAfterCall(
         promptEnabled: await _settings.getPromptAfterCall(),
@@ -460,5 +477,102 @@ class CallMatchingService {
       AppLog.e(_tag, 'error processing call event', e);
       return null;
     }
+  }
+
+  /// A number saved in the phone's own contacts (but not in the app) becomes
+  /// one of your people, by the name you saved it under.
+  Future<Contact?> _fromPhoneContacts(CallEvent event) async {
+    try {
+      final saved = await PhoneContactService().findByPhoneNumber(event.phoneNumber);
+      final name = saved?.displayName.trim() ?? '';
+      if (name.isEmpty) return null;
+      final id = await _contactRepo.insert(
+        Contact(id: '', name: name, phoneNumber: event.phoneNumber, lastInteraction: event.timestamp),
+      );
+      AppLog.d(_tag, 'added $id from the phone contacts');
+      return _contactRepo.getById(id);
+    } catch (e) {
+      AppLog.w(_tag, 'phone contacts unavailable', e);
+      return null;
+    }
+  }
+
+  /// A call with a number that isn't one of your people: it goes to New
+  /// numbers (never into People on its own), with "Who was this?" after a
+  /// real talk. Ignored numbers are kept quietly. Returns null: no contact.
+  Future<Contact?> _logNewNumber(CallEvent event) async {
+    final repo = NewNumberRepository();
+    final shown = await repo.logCall(
+      phoneNumber: event.phoneNumber,
+      type: event.type,
+      duration: event.duration,
+      timestamp: event.timestamp,
+    );
+    final key = PhoneContact.matchKey(event.phoneNumber);
+    // Something typed in the call card stays with the number until it's saved.
+    final pending = await CallOverlayState.peekPendingReview();
+    if (pending != null && pending['contactId'] == null) {
+      final text = (pending['text'] as String? ?? '').trim();
+      await CallOverlayState.takePendingReview();
+      if (shown && text.isNotEmpty) await repo.saveNote(key, text);
+    }
+    if (!shown) {
+      AppLog.d(_tag, 'ignored number, nothing to show');
+      return null;
+    }
+    AppLog.d(_tag, 'logged ${event.type.name} call from a new number');
+    final ask = shouldAskWhoWasThis(
+      promptEnabled: await _settings.getPromptAfterCall(),
+      type: event.type,
+      duration: event.duration,
+      minDuration: Duration(seconds: await _settings.getMinCallDuration()),
+    );
+    if (ask) {
+      await NotificationService().showNewNumberPrompt(
+        phoneNumber: event.phoneNumber,
+        phoneKey: key,
+        duration: event.duration,
+      );
+    }
+    return null;
+  }
+
+  /// You talked to [contactId]: their call-back reminders are done and the
+  /// missed-call notification goes away.
+  Future<void> _closeCallBacks(String contactId) async {
+    for (final reminder in await ReminderRepository().completeCallBacks(contactId)) {
+      await NotificationService().cancelReminder(reminder.id);
+    }
+    await NotificationService().cancelMissedCallPrompt(contactId);
+  }
+
+  /// "Missed Selam · 10:42", unless missed-call notes are off in Settings.
+  Future<void> _notifyMissed(Contact contact, CallEntry call) async {
+    if (!await _settings.getMissedCallReminders()) return;
+    final todos = await TodoRepository().getByContactId(contact.id);
+    final owed = todos.where((t) => !t.isCompleted && t.owedBy == OwedBy.me).toList()
+      ..sort((a, b) => (a.dueAt ?? DateTime(9999)).compareTo(b.dueAt ?? DateTime(9999)));
+    final open = callBacks(
+      calls: await _callRepo.getByContactId(contact.id),
+      contacts: {contact.id: contact},
+      now: DateTime.now(),
+    );
+    final today = DateTime.now();
+    final missedToday = open.isEmpty
+        ? 1
+        : (await _callRepo.getByContactId(contact.id))
+              .where(
+                (c) =>
+                    c.type == CallType.missed &&
+                    !c.timestamp.isBefore(open.first.firstMissedAt) &&
+                    DayLabels.daysBetween(c.timestamp, today) == 0,
+              )
+              .length;
+    await NotificationService().showMissedCallPrompt(
+      contact,
+      call,
+      owe: owed.isEmpty ? '' : owed.first.title,
+      missedToday: missedToday < 1 ? 1 : missedToday,
+    );
   }
 }

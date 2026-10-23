@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Android 8.1+: dark status and navigation icons on the cream launch screen.
-     The app is light-only for now, so the night variant matches. -->
+<!-- Android 8.1+: dark status and navigation icons on the cream launch screen. -->
 <resources>
     <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
         <item name="android:windowBackground">@drawable/launch_background</item>

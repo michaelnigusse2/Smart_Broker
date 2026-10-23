@@ -43,12 +43,12 @@ class ContactCard extends StatelessWidget {
                     decoration: hasTasks
                         ? BoxDecoration(
                             shape: BoxShape.circle,
-                            border: Border.all(color: AppColors.primary, width: 1.5),
+                            border: Border.all(color: context.sb.primary, width: 1.5),
                           )
                         : null,
                     child: CircleAvatar(
-                      backgroundColor: AppColors.surfaceElevated,
-                      foregroundColor: AppColors.textPrimary,
+                      backgroundColor: context.sb.fill,
+                      foregroundColor: context.sb.text,
                       radius: 20,
                       child: Text(
                         contact.initials,
@@ -75,7 +75,7 @@ class ContactCard extends StatelessWidget {
                             ),
                             if (!contact.isSmartBrokerContact && contact.isPhoneContact) ...[
                               const SizedBox(width: 4),
-                              const Icon(LucideIcons.smartphone, size: 12, color: AppColors.textTertiary),
+                              Icon(LucideIcons.smartphone, size: 12, color: context.sb.text3),
                             ],
                           ],
                         ),
@@ -100,7 +100,7 @@ class ContactCard extends StatelessWidget {
                         const SizedBox(height: 4),
                         InfoChip(
                           label: '${contact.pendingTasksCount} ${contact.pendingTasksCount == 1 ? 'task' : 'tasks'}',
-                          color: AppColors.primary,
+                          color: context.sb.primary,
                         ),
                       ],
                     ],

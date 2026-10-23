@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- App icon, "Two-way S": an S drawn as two arrows, what you owe and what
+     they owe. Drawn on a 100-unit tile (the visible icon), placed in the
+     middle 72 dp of the 108 dp adaptive-icon canvas. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group android:translateX="18" android:translateY="18" android:scaleX="0.72" android:scaleY="0.72">
+        <group android:pivotX="50" android:pivotY="50" android:scaleX="0.88" android:scaleY="0.88">
+            <path
+                android:pathData="M72,28 H45 A11,11 0 0,0 45,50 H50 M64,20.5 L72,28 L64,35.5"
+                android:strokeColor="#FFFFFF"
+                android:strokeWidth="8"
+                android:strokeLineCap="round"
+                android:strokeLineJoin="round" />
+            <path
+                android:pathData="M50,50 H55 A11,11 0 0,1 55,72 H28 M36,64.5 L28,72 L36,79.5"
+                android:strokeColor="#93A8FF"
+                android:strokeWidth="8"
+                android:strokeLineCap="round"
+                android:strokeLineJoin="round" />
+        </group>
+    </group>
+</vector>

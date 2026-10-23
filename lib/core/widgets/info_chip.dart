@@ -16,7 +16,7 @@ class InfoChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 4),
       decoration: BoxDecoration(
-        color: AppColors.surfaceElevated,
+        color: context.sb.fill,
         borderRadius: BorderRadius.circular(4), // very subtle roundness
       ),
       child: Text(

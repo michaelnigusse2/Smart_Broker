@@ -1,6 +1,8 @@
+import 'package:smart_broker/core/repositories/call_repository.dart';
 import 'package:smart_broker/core/repositories/contact_repository.dart';
 import 'package:smart_broker/core/repositories/reminder_repository.dart';
 import 'package:smart_broker/core/repositories/todo_repository.dart';
+import 'package:smart_broker/models/call_entry.dart';
 import 'package:smart_broker/models/contact.dart';
 import 'package:smart_broker/models/reminder.dart';
 import 'package:smart_broker/models/todo_item.dart';
@@ -53,6 +55,7 @@ Future<Reminder> insertReminder({
   String? noteId,
   String title = 'Follow up',
   bool completed = false,
+  String kind = '',
 }) async {
   final reminder = Reminder(
     id: id ?? '',
@@ -62,7 +65,19 @@ Future<Reminder> insertReminder({
     dateTime: at,
     completed: completed,
     createdAt: DateTime.now(),
+    kind: kind,
   );
   final newId = await ReminderRepository().insert(reminder);
   return reminder.copyWith(id: newId);
+}
+
+Future<CallEntry> insertCall({
+  required String contactId,
+  required CallType type,
+  required DateTime at,
+  Duration duration = Duration.zero,
+}) async {
+  final call = CallEntry(id: '', contactId: contactId, type: type, duration: duration, timestamp: at);
+  final id = await CallRepository().insert(call);
+  return CallEntry(id: id, contactId: contactId, type: type, duration: duration, timestamp: at);
 }
