@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/sb_widgets.dart';
+import '../../../core/utils/day_labels.dart';
 import '../../../models/contact.dart';
 import '../../../models/todo_item.dart';
 
@@ -50,8 +51,14 @@ class _PromiseSheetState extends State<_PromiseSheet> {
     super.initState();
     final due = widget.editing?.dueAt;
     if (due != null) {
-      _due = _Due.picked;
+      // Show "Today" or "Tomorrow" selected rather than the date itself.
       _picked = due;
+      final days = DayLabels.daysBetween(DateTime.now(), due);
+      _due = days == 0
+          ? _Due.today
+          : days == 1
+          ? _Due.tomorrow
+          : _Due.picked;
     }
     _title.addListener(() => setState(() {}));
   }
@@ -79,12 +86,20 @@ class _PromiseSheetState extends State<_PromiseSheet> {
       case _Due.none:
         return null;
       case _Due.today:
-        return _endOf(now);
+        return _keptOn(now) ?? _endOf(now);
       case _Due.tomorrow:
-        return _endOf(now.add(const Duration(days: 1)));
+        final tomorrow = now.add(const Duration(days: 1));
+        return _keptOn(tomorrow) ?? _endOf(tomorrow);
       case _Due.picked:
         return _picked;
     }
+  }
+
+  /// The promise's own due time when it already falls on [day] (so
+  /// changing something else keeps it as it was).
+  DateTime? _keptOn(DateTime day) {
+    final picked = _picked;
+    return picked != null && DayLabels.daysBetween(day, picked) == 0 ? picked : null;
   }
 
   Future<void> _pickDate() async {

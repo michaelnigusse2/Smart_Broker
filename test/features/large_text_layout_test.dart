@@ -78,6 +78,10 @@ void main() {
 
     expect(find.text('Call back about the three-bedroom unit near Bole'), findsOneWidget);
     expect(find.text('Call · Viewing'), findsOneWidget);
+    // Times stay on one line ("11:2" over "1" was a bug with large text).
+    final noon = find.text('12:00');
+    expect(noon, findsWidgets);
+    expect(tester.getSize(noon.first).height, lessThan(2 * 20 * 1.3));
   });
 
   testWidgets('Calendar month sheet fits a small phone with large text', (tester) async {

@@ -22,6 +22,12 @@ class MainActivity : FlutterActivity() {
             window.isNavigationBarContrastEnforced = false
             window.isStatusBarContrastEnforced = false
         }
+        // Dark icons on the cream launch screen until Flutter draws its first
+        // frame and sets them itself.
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            isAppearanceLightStatusBars = true
+            isAppearanceLightNavigationBars = true
+        }
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {

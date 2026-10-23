@@ -140,7 +140,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
             ),
           );
     if (chosen == null || !mounted) return;
-    await WrapUpStore.remove(chosen.callId);
+    // The call leaves the list once its note is saved (closing keeps it).
     await _open(
       AppRoutes.addNote,
       arguments: {
@@ -148,6 +148,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
         'isPostCall': true,
         'duration': chosen.length,
         'marks': chosen.marks,
+        'callId': chosen.callId,
       },
     );
   }

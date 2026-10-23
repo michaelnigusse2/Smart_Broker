@@ -61,7 +61,7 @@ final mockContacts = [
   ),
   Contact(
     id: 'c7',
-    name: 'Unknown Number',
+    name: 'Hana Mulugeta',
     phoneNumber: '+1 (555) 111-2222',
     lastInteraction: DateTime.now().subtract(const Duration(hours: 5)),
     pendingTasksCount: 0,

@@ -176,6 +176,7 @@ class CallMatchingService {
   // ── Live call (overlay) ────────────────────────────────────────
 
   Future<void> _handleStateChange(String? state, String? number) async {
+    AppLog.d(_tag, 'call state: $state');
     final hasNumber = number != null && number.isNotEmpty;
     switch (state) {
       case 'ringing':
@@ -333,17 +334,38 @@ class CallMatchingService {
 
   Future<void> _handleCallLogged(CallEvent event) async {
     // What the overlay gathered during the call (marks), read before the
-    // call is logged; the overlay has closed by now.
-    final state = await CallOverlayState.read();
+    // call is logged. Only a call that has ended is this one: a call still
+    // ringing or on is a newer call (this one was logged late), whose state
+    // stays as it is.
+    final read = await CallOverlayState.read();
+    final state = read?['phase'] == 'ended' ? read : null;
     final contact = await _logCall(
       event,
       marks: talkTimeMarks(state, event.duration),
     );
     // The call is over and handed to the notification: the overlay state
-    // has done its job.
-    if (state != null) await CallOverlayState.clear();
+    // has done its job. The overlay closes itself on "ended" (or when the
+    // state is gone, if it was too slow to see "ended").
+    if (state != null) {
+      await CallOverlayState.clear();
+      await _notifyOverlay();
+      unawaited(_closeOverlayLater());
+    }
     if (contact == null) return;
     await CallOverlayState.attachContactToPendingReview(contact.id);
+  }
+
+  /// Last resort for a call card still on screen after its call was logged
+  /// (the overlay closes itself on "ended"; this covers a stalled overlay).
+  Future<void> _closeOverlayLater() async {
+    await Future.delayed(const Duration(seconds: 3));
+    if (_callInProgress) return; // A new call has started meanwhile.
+    try {
+      if (await overlay.isActive()) {
+        AppLog.d(_tag, 'closing a call card left on screen');
+        await overlay.close();
+      }
+    } catch (_) {}
   }
 
   /// Matches the call to a contact (creating one if needed), logs it, and

@@ -192,17 +192,21 @@ class _NavItem extends StatelessWidget {
               child: Icon(icon, size: selected ? 19 : 21, color: selected ? sb.onPrimary : sb.text2),
             ),
             const SizedBox(height: 2),
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.fade,
-              softWrap: false,
-              textScaler: MediaQuery.textScalerOf(context).clamp(maxScaleFactor: 1.15),
-              style: TextStyle(
-                fontSize: 12,
-                height: 16 / 12,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                color: selected ? sb.text : sb.text2,
+            // With large text the bold label ("Promises") can be wider than
+            // its slot: shrink it to fit rather than cut it off.
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                label,
+                maxLines: 1,
+                softWrap: false,
+                textScaler: MediaQuery.textScalerOf(context).clamp(maxScaleFactor: 1.15),
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 16 / 12,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                  color: selected ? sb.text : sb.text2,
+                ),
               ),
             ),
           ],

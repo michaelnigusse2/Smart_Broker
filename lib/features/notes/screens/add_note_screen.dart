@@ -7,6 +7,7 @@ import '../../../core/constants/app_routes.dart';
 import '../../../core/repositories/contact_repository.dart';
 import '../../../core/repositories/note_repository.dart';
 import '../../../core/services/overlay_draft_service.dart';
+import '../../../core/services/wrap_up_store.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/sb_widgets.dart';
 import '../../../core/transcription/dictation_controller.dart';
@@ -22,7 +23,8 @@ import '../../../models/note.dart';
 /// to pick out the promises; closing keeps unsaved words as a draft.
 ///
 /// Arguments: a contact id, a [Note] to edit, or a map with `contactId`,
-/// `isPostCall`, `duration` ("6:42") and `marks` (from the call overlay).
+/// `isPostCall`, `duration` ("6:42"), `marks` (from the call overlay) and
+/// `callId` (the call on Today's wrap-up list; saving a note wraps it up).
 class AddNoteScreen extends StatefulWidget {
   const AddNoteScreen({super.key});
 
@@ -39,6 +41,7 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
   String _name = '';
   Note? _note;
   bool _isPostCall = false;
+  String? _callId;
   String? _duration;
   List<Map<String, dynamic>> _marks = [];
   bool _draftRestored = false;
@@ -74,6 +77,7 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
       _contactId = args['contactId'] as String?;
       _isPostCall = args['isPostCall'] as bool? ?? false;
       _duration = args['duration'] as String?;
+      _callId = args['callId'] as String?;
       _marks = [for (final m in (args['marks'] as List? ?? const [])) Map<String, dynamic>.from(m as Map)];
     } else if (args is Note) {
       _note = args;
@@ -211,6 +215,8 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
       _savedNoteId = id;
       _savedText = text;
       await _draftService.clearDraft(_contactId!);
+      // The call it was about is wrapped up now.
+      if (_callId != null) await WrapUpStore.remove(_callId!);
       return id;
     } finally {
       if (mounted) setState(() => _saving = false);

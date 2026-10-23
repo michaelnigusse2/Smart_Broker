@@ -34,6 +34,8 @@ class OverlayGateway {
     overlayContent: 'Call notes',
   );
 
+  Future<void> close() => FlutterOverlayWindow.closeOverlay();
+
   Future<void> shareData(Object data) async {
     await FlutterOverlayWindow.shareData(data);
   }

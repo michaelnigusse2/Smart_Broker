@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Espresso canvas, shown while the app starts. Matches SbPalette.canvas. -->
+    <color name="sb_canvas">#F3ECE2</color>
+</resources>

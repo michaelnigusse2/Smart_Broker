@@ -127,6 +127,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   Future<void> _actions(Reminder reminder) async {
     final sb = context.sb;
+    final messenger = ScaffoldMessenger.of(context);
     final action = await showModalBottomSheet<String>(
       context: context,
       useSafeArea: true,
@@ -205,6 +206,21 @@ class _CalendarScreenState extends State<CalendarScreen> {
     } else {
       await _reminderRepo.delete(reminder.id);
       await NotificationService().cancelReminder(reminder.id);
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: const Text('Reminder deleted'),
+            action: SnackBarAction(
+              label: 'Undo',
+              onPressed: () async {
+                await _reminderRepo.insert(reminder);
+                if (!reminder.completed) await NotificationService().scheduleReminder(reminder);
+                if (mounted) _load();
+              },
+            ),
+          ),
+        );
     }
     _load();
   }
@@ -592,9 +608,11 @@ class _ItemRow extends StatelessWidget {
           child: Row(
             children: [
               SizedBox(
-                width: 50,
+                width: _timeColumnWidth(context),
                 child: Text(
                   time,
+                  maxLines: 1,
+                  softWrap: false,
                   style: TextStyle(
                     fontSize: 15,
                     height: 20 / 15,
@@ -657,7 +675,7 @@ class _NowRow extends StatelessWidget {
         child: Row(
           children: [
             SizedBox(
-              width: 50,
+              width: _timeColumnWidth(context),
               child: Text(
                 label,
                 style: TextStyle(fontSize: 11, height: 14 / 11, fontWeight: FontWeight.w700, color: accent),
@@ -692,7 +710,10 @@ class _FreeRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: [
-          SizedBox(width: 50, child: Text(time, style: style)),
+          SizedBox(
+            width: _timeColumnWidth(context),
+            child: Text(time, maxLines: 1, softWrap: false, style: style),
+          ),
           const SizedBox(width: 8),
           Expanded(child: Text(label, style: style)),
         ],
@@ -738,6 +759,11 @@ class _NothingPlanned extends StatelessWidget {
 }
 
 /// The whole month, to jump to any day.
+/// The time column on the left of the day list. It grows with the text
+/// size so "11:21" stays on one line with large text. (Scaled as the 15 sp
+/// time is: Android scales large sizes less than small ones.)
+double _timeColumnWidth(BuildContext context) => 50 * MediaQuery.textScalerOf(context).scale(15) / 15;
+
 class _MonthSheet extends StatefulWidget {
   const _MonthSheet({required this.selected, required this.now, required this.hasEvents});
 
@@ -755,8 +781,10 @@ class _MonthSheetState extends State<_MonthSheet> {
   @override
   Widget build(BuildContext context) {
     final sb = context.sb;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+    // TableCalendar fills the height it is given; unbounded, it takes just
+    // the month, so the sheet fits the month (and scrolls with huge text).
+    return SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(12, 0, 12, 16 + MediaQuery.paddingOf(context).bottom),
       child: TableCalendar<bool>(
         firstDay: DateTime.utc(2020, 1, 1),
         lastDay: DateTime.utc(2100, 12, 31),
@@ -824,7 +852,8 @@ class _AddReminderSheetState extends State<_AddReminderSheet> {
       _date = DateTime(suggested.year, suggested.month, suggested.day);
       _time = TimeOfDay.fromDateTime(suggested);
     }
-    if (widget.contacts.isNotEmpty) _contactId = widget.contacts.first.id;
+    // Ask who it's with rather than guess (unless there's only one person).
+    if (widget.contacts.length == 1) _contactId = widget.contacts.first.id;
     _titleController.addListener(() => setState(() {}));
   }
 

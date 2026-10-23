@@ -104,7 +104,8 @@ class NotificationService {
       case 'later':
         return true;
       default:
-        if (callId != null) await WrapUpStore.remove(callId);
+        // Add note (or a tap on the notification): the call stays on the
+        // wrap-up list until a note for it is actually saved.
         return false;
     }
   }
@@ -120,6 +121,7 @@ class NotificationService {
       final pending = await CallOverlayState.takePendingReview();
       if (pending != null) {
         final noteId = await CallOverlayState.savePendingNote(pending);
+        if (noteId != null && callId != null) await WrapUpStore.remove(callId);
         AppRoutes.globalNavigatorKey.currentState?.pushNamed(
           AppRoutes.aiReview,
           arguments: {...pending, 'noteId': ?noteId},
@@ -139,6 +141,7 @@ class NotificationService {
             'isPostCall': true,
             'duration': duration,
             'marks': wrapUp?.marks ?? const [],
+            'callId': ?callId,
           },
         );
       }

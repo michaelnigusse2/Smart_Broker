@@ -70,6 +70,12 @@ if /i "!CMD!"=="devices" goto do_devices
 if /i "!CMD!"=="scribe"  goto do_scribe
 if /i "!CMD!"=="target"  goto do_target
 if /i "!CMD!"=="phonemodel" goto do_phonemodel
+if /i "!CMD!"=="reboot"  goto do_reboot
+if /i "!CMD!"=="overlay" goto do_overlay
+if /i "!CMD!"=="trim"    goto do_trim
+if /i "!CMD!"=="diskstats" goto do_diskstats
+if /i "!CMD!"=="hold"    goto do_hold
+if /i "!CMD!"=="stop"    goto do_stop
 call :done "ignored"
 exit /b 0
 
@@ -244,4 +250,57 @@ exit /b 1
 :done
 >> "%LOG%" echo [%time%] %~1
 echo %~1 %time%> build_logs\emu_done.txt
+exit /b 0
+
+rem ---- Emulator-only helpers -------------------------------------------------
+rem   reboot    restart Android on the emulator (when it hangs or stops drawing)
+rem   overlay   let SmartBroker draw over other apps (the call card)
+rem   trim      clear system caches to free storage, then write storage.txt
+
+:do_reboot
+if not "!SEL!"=="-s emulator-5554" (call :done "reboot is emulator-only" & exit /b 0)
+"%ADB%" !SEL! reboot >> "%LOG%" 2>&1
+"%ADB%" !SEL! wait-for-device >> "%LOG%" 2>&1
+set /a "TRIES=0"
+:reboot_wait
+set "BOOT="
+for /f %%b in ('"%ADB%" !SEL! shell getprop sys.boot_completed 2^>nul') do set "BOOT=%%b"
+if "!BOOT!"=="1" (call :done "reboot" & exit /b 0)
+set /a "TRIES+=1"
+if !TRIES! GEQ 90 (call :done "reboot timed out" & exit /b 0)
+timeout /t 2 /nobreak >nul
+goto reboot_wait
+
+:do_overlay
+if not "!SEL!"=="-s emulator-5554" (call :done "overlay is emulator-only" & exit /b 0)
+"%ADB%" !SEL! shell appops set com.smartbroker.smart_broker SYSTEM_ALERT_WINDOW allow >> "%LOG%" 2>&1
+call :done "overlay"
+exit /b 0
+
+:do_trim
+if not "!SEL!"=="-s emulator-5554" (call :done "trim is emulator-only" & exit /b 0)
+"%ADB%" !SEL! shell pm trim-caches 64G >> "%LOG%" 2>&1
+"%ADB%" !SEL! shell df -h /data > build_logs\storage.txt 2>> "%LOG%"
+call :done "trim"
+exit /b 0
+
+rem   diskstats app, data and cache sizes -> build_logs\diskstats.txt
+:do_diskstats
+"%ADB%" !SEL! shell dumpsys diskstats > build_logs\diskstats.txt 2>> "%LOG%"
+call :done "diskstats"
+exit /b 0
+
+rem   hold X Y  long-press at pixel X,Y (0.8 s)
+:do_hold
+call :num "!P1!" || exit /b 0
+call :num "!P2!" || exit /b 0
+"%ADB%" !SEL! shell input swipe !P1! !P2! !P1! !P2! 800 >> "%LOG%" 2>&1
+call :done "hold"
+exit /b 0
+
+rem   stop      force-stop SmartBroker (emulator only), to test a cold start
+:do_stop
+if not "!SEL!"=="-s emulator-5554" (call :done "stop is emulator-only" & exit /b 0)
+"%ADB%" !SEL! shell am force-stop com.smartbroker.smart_broker >> "%LOG%" 2>&1
+call :done "stop"
 exit /b 0

@@ -918,52 +918,61 @@ class _SetupRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final sb = context.sb;
     return MergeSemantics(
-      child: Container(
-        constraints: const BoxConstraints(minHeight: 76),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
-          border: divider ? Border(top: BorderSide(color: sb.fill)) : null,
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(color: tint.bg, borderRadius: BorderRadius.circular(13)),
-              child: Icon(icon, size: 22, color: tint.fg),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(fontSize: 17, height: 22 / 17, fontWeight: FontWeight.w600, color: sb.text),
+      child: GestureDetector(
+        // The whole row toggles, not just the switch.
+        behavior: HitTestBehavior.opaque,
+        onTap: onChanged == null ? null : () => onChanged!(!value),
+        child: _row(sb),
+      ),
+    );
+  }
+
+  Widget _row(SbPalette sb) {
+    return Container(
+      constraints: const BoxConstraints(minHeight: 76),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        border: divider ? Border(top: BorderSide(color: sb.fill)) : null,
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(color: tint.bg, borderRadius: BorderRadius.circular(13)),
+            child: Icon(icon, size: 22, color: tint.fg),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(fontSize: 17, height: 22 / 17, fontWeight: FontWeight.w600, color: sb.text),
+                ),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: 13,
+                    height: 18 / 13,
+                    color: sb.text2,
+                    fontFeatures: const [FontFeature.tabularFigures()],
                   ),
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      fontSize: 13,
-                      height: 18 / 13,
-                      color: sb.text2,
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                    ),
+                ),
+                if (progress != null) ...[
+                  const SizedBox(height: 6),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(99),
+                    child: LinearProgressIndicator(value: progress, minHeight: 4, backgroundColor: sb.fill),
                   ),
-                  if (progress != null) ...[
-                    const SizedBox(height: 6),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(99),
-                      child: LinearProgressIndicator(value: progress, minHeight: 4, backgroundColor: sb.fill),
-                    ),
-                  ],
                 ],
-              ),
+              ],
             ),
-            const SizedBox(width: 10),
-            Switch(value: value, onChanged: onChanged),
-          ],
-        ),
+          ),
+          const SizedBox(width: 10),
+          Switch(value: value, onChanged: onChanged),
+        ],
       ),
     );
   }

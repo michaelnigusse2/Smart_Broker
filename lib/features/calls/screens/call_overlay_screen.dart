@@ -96,7 +96,13 @@ class _CallOverlayScreenState extends State<CallOverlayScreen> {
     final state = await CallOverlayState.read();
     if (!mounted) return;
     if (state == null) {
-      if (_phase.isNotEmpty) setState(() => _phase = '');
+      // The app clears the call state once the call is logged. When that
+      // beats our "ended" refresh (a call that ends within a second or two),
+      // the call is over all the same.
+      if (_phase.isNotEmpty) {
+        setState(() => _phase = '');
+        await _endOfCall();
+      }
       return;
     }
     final phase = state['phase'] as String? ?? '';
@@ -504,7 +510,7 @@ class _Pill extends StatelessWidget {
     final sb = context.sb;
     return Semantics(
       button: true,
-      label: 'On a call with $name, $clock. Mark a moment.',
+      label: clock.isEmpty ? 'Call with $name. Mark a moment.' : 'On a call with $name, $clock. Mark a moment.',
       excludeSemantics: true,
       child: GestureDetector(
         onTap: onOpen,
